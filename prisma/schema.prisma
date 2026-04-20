@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Hashed master password for auth ONLY (not for encryption)
+  role      String   @default("user")
+  tenantId  String   @default(uuid())
+  createdAt DateTime @default(now())
+  vaults    Vault[]
+  sessions  Session[]
+}
+
+model Vault {
+  id            String   @id @default(uuid())
+  userId        String
+  title         String
+  category      String
+  tags          String   // Comma separated
+  encryptedData String   // AES-256-GCM encrypted blob
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RecoveryCode {
+  id        String   @id @default(uuid())
+  userId    String
+  code      String   // Hashed recovery code
+  used      Boolean  @default(false)
+}

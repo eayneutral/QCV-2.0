@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  background-color: #050510;
+  color: #fff;
+  transition: all 0.4s ease-in-out;
+}
+
+/* Base Glassmorphism Class */
+.glass-panel {
+  backdrop-filter: blur(12px) saturate(180%);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 40px -12px rgba(0,0,0,0.3);
+}
+
+/* Theme 1: Neon Blue */
+:root.neon-blue {
+  --surface-rgb: 0, 15, 40;
+  background: linear-gradient(135deg, #020024 0%, #090979 35%, #00d4ff 100%);
+  --glow-color: rgba(0, 212, 255, 0.4);
+}
+
+/* Theme 2: Cyber Purple */
+:root.cyber-purple {
+  --surface-rgb: 25, 0, 45;
+  background: radial-gradient(circle at top right, #3b0764, #000000);
+  --glow-color: rgba(168, 85, 247, 0.4);
+}
+
+/* Theme 3: Emerald Matrix */
+:root.emerald-matrix {
+  --surface-rgb: 0, 30, 15;
+  background: linear-gradient(to bottom right, #064e3b, #000000);
+  --glow-color: rgba(16, 185, 129, 0.4);
+}
+
+/* Theme 4: Sunset Gradient */
+:root.sunset-gradient {
+  --surface-rgb: 40, 15, 0;
+  background: linear-gradient(45deg, #7f1d1d, #c2410c, #000000);
+  --glow-color: rgba(249, 115, 22, 0.4);
+}
+
+/* Theme 5: Quantum Prism (Animated) */
+@keyframes quantum-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+:root.quantum-prism {
+  --surface-rgb: 10, 10, 20;
+  background: linear-gradient(270deg, #1e1b4b, #312e81, #0f172a, #000000);
+  background-size: 400% 400%;
+  animation: quantum-shift 15s ease infinite;
+  --glow-color: rgba(99, 102, 241, 0.4);
+}
+
+input, textarea, select {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: white;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--glow-color);
+  box-shadow: 0 0 10px var(--glow-color);
+}

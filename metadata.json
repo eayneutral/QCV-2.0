@@ -1,0 +1,8 @@
+{
+  "name": "Quantum Credentials Vault",
+  "description": "Zero-knowledge, quantum-ready credential vault platform.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
