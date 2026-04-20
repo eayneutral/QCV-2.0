@@ -8,14 +8,35 @@ datasource db {
 }
 
 model User {
+  id             String          @id @default(uuid())
+  email          String          @unique
+  password       String          // Hashed master password for auth ONLY
+  role           String          @default("user")
+  tenantId       String          @default(uuid())
+  createdAt      DateTime        @default(now())
+  vaults         Vault[]
+  sessions       Session[]
+  authenticators Authenticator[]
+  magicLinks     MagicLink[]
+}
+
+model Authenticator {
+  credentialID         String  @id // Base64URL encoded
+  userId               String
+  credentialPublicKey  Bytes
+  counter              Int
+  credentialDeviceType String
+  credentialBackedUp   Boolean
+  transports           String?
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MagicLink {
   id        String   @id @default(uuid())
-  email     String   @unique
-  password  String   // Hashed master password for auth ONLY (not for encryption)
-  role      String   @default("user")
-  tenantId  String   @default(uuid())
-  createdAt DateTime @default(now())
-  vaults    Vault[]
-  sessions  Session[]
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Vault {

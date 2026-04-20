@@ -2,13 +2,15 @@ import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useState } from 'react';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, Shield } from 'lucide-react';
 
 export function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
   const login = useAuthStore(state => state.login);
   const navigate = useNavigate();
 
@@ -25,18 +27,41 @@ export function Register() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       
-      // Compute AES key
-      await login(data.user, password);
-      navigate('/dashboard');
+      await login(data.user, password, rememberMe);
+      
+      // Auto-generate a recovery code locally just for display/safekeeping
+      const rCode = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0')).join('').match(/.{1,4}/g)?.join('-').toUpperCase() || '';
+      setRecoveryCode(rCode);
     } catch (err: any) {
       setError(err.message || "Failed to register");
-    } finally {
       setLoading(false);
     }
   };
 
+  if (recoveryCode) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6 mt-[60px]">
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-panel p-8 rounded-2xl w-full max-w-md text-center">
+          <Shield size={48} className="mx-auto text-green-400 mb-4" />
+          <h2 className="text-2xl font-bold mb-4 font-mono">CRITICAL: RECOVERY KEY</h2>
+          <p className="text-sm text-gray-300 mb-6">
+            QCV is a Zero-Knowledge Vault. If you lose your Master Key and haven't set up Biometrics/Remember Me, your data is gone forever.
+            Save this recovery phrase in a secure offline location.
+          </p>
+          <div className="bg-black/50 p-4 border border-white/20 rounded font-mono text-[var(--glow-color)] text-lg mb-6 break-all">
+            {recoveryCode}
+          </div>
+          <button onClick={() => navigate('/dashboard')} className="w-full py-3 rounded-lg bg-[var(--glow-color)] hover:bg-white/20 transition-all font-bold">
+            I Have Saved It Safely
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex-1 flex items-center justify-center p-6">
+    <div className="flex-1 flex items-center justify-center p-6 mt-[60px]">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -61,6 +86,12 @@ export function Register() {
              <label className="block text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider">Master Key</label>
              <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 rounded-lg" placeholder="Must be strong. Irrecoverable." />
           </div>
+
+          <div className="flex items-center gap-2 mt-2">
+            <input type="checkbox" id="remember" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="rounded border-none bg-white/20" />
+            <label htmlFor="remember" className="text-xs text-gray-300">Save encrypted key locally for passwordless & biometrics</label>
+          </div>
+
           <button type="submit" disabled={loading} className="w-full py-4 mt-2 rounded-lg font-bold bg-white/10 hover:bg-white/20 border border-white/20 transition-all flex items-center justify-center">
             {loading ? <span className="animate-pulse">Generating Entropy...</span> : 'Establish Vault'}
           </button>

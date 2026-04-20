@@ -24,6 +24,16 @@ export async function deriveKey(password: string, salt: string): Promise<CryptoK
   );
 }
 
+export async function exportKeyStore(key: CryptoKey): Promise<string> {
+  const exported = await crypto.subtle.exportKey('jwk', key);
+  return JSON.stringify(exported);
+}
+
+export async function importKeyStore(jwkStr: string): Promise<CryptoKey> {
+  const jwk = JSON.parse(jwkStr);
+  return crypto.subtle.importKey('jwk', jwk, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+}
+
 export async function encryptData(data: string, key: CryptoKey): Promise<string> {
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
   const enc = new TextEncoder();

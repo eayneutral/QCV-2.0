@@ -62,6 +62,13 @@
   --glow-color: rgba(99, 102, 241, 0.4);
 }
 
+/* Theme 6: Cosmic Void */
+:root.cosmic-void {
+  --surface-rgb: 5, 5, 10;
+  background: radial-gradient(circle at bottom center, #2e0854, #000510);
+  --glow-color: rgba(138, 43, 226, 0.4);
+}
+
 input, textarea, select {
   background: rgba(0,0,0,0.3);
   border: 1px solid rgba(255,255,255,0.1);
