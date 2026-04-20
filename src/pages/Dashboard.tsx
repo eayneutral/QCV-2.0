@@ -188,6 +188,15 @@ export function Dashboard() {
     );
   }
 
+  const THEMES = [
+    { id: 'neon-blue', name: 'Neon Blue', background: 'linear-gradient(135deg, #020024 0%, #090979 35%, #00d4ff 100%)' },
+    { id: 'cyber-purple', name: 'Cyber Purple', background: 'radial-gradient(circle at top right, #3b0764, #000000)' },
+    { id: 'emerald-matrix', name: 'Emerald Matrix', background: 'linear-gradient(to bottom right, #064e3b, #000000)' },
+    { id: 'sunset-gradient', name: 'Sunset Gradient', background: 'linear-gradient(45deg, #7f1d1d, #c2410c, #000000)' },
+    { id: 'quantum-prism', name: 'Quantum Prism', background: 'linear-gradient(270deg, #1e1b4b, #312e81, #0f172a, #000000)' },
+    { id: 'cosmic-void', name: 'Cosmic Void', background: 'radial-gradient(circle at bottom center, #2e0854, #000510)' }
+  ];
+
   return (
     <div className="flex-1 flex flex-col p-4 md:p-8 max-w-6xl mx-auto w-full relative">
       <header className="flex justify-between items-center mb-8 glass-panel p-4 rounded-2xl">
@@ -208,15 +217,30 @@ export function Dashboard() {
         </div>
       </header>
 
-      {showThemePanel && (
-        <motion.div initial={{opacity:0, y:-10}} animate={{opacity:1, y:0}} className="glass-panel p-4 mb-4 rounded-xl flex gap-4 overflow-x-auto">
-          {['neon-blue', 'cyber-purple', 'emerald-matrix', 'sunset-gradient', 'quantum-prism', 'cosmic-void'].map(t => (
-            <button key={t} onClick={() => setTheme(t as any)} className={`px-4 py-2 rounded-lg whitespace-nowrap border ${theme === t ? 'border-[var(--glow-color)] bg-white/10' : 'border-white/10'}`}>
-              {t.replace('-', ' ')}
-            </button>
-          ))}
-        </motion.div>
-      )}
+      <AnimatePresence>
+        {showThemePanel && (
+          <motion.div initial={{opacity:0, y:-10, scale: 0.95}} animate={{opacity:1, y:0, scale: 1}} exit={{opacity:0, y:-10, scale: 0.95}} className="glass-panel p-6 mb-6 rounded-2xl">
+            <h3 className="text-sm font-bold text-gray-300 mb-4 font-mono tracking-wider">SELECT AESTHETIC</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {THEMES.map(t => (
+                <button 
+                  key={t.id} 
+                  onClick={() => setTheme(t.id as any)} 
+                  className={`group relative flex flex-col items-center gap-2 p-2 rounded-xl border transition-all duration-300 ${theme === t.id ? 'border-[var(--glow-color)] bg-white/10 shadow-[0_0_20px_var(--glow-color)] text-white' : 'border-white/5 hover:border-white/20 hover:bg-white/5 text-gray-400'}`}
+                >
+                  <div 
+                    className="w-full h-16 rounded-lg shadow-inner flex items-center justify-center transition-transform duration-300 group-hover:scale-105" 
+                    style={{ background: t.background, backgroundSize: t.id === 'quantum-prism' ? '400% 400%' : 'auto' }}
+                  >
+                    {theme === t.id && <Check size={20} className="text-white drop-shadow-md" />}
+                  </div>
+                  <span className="text-xs font-bold tracking-wide whitespace-nowrap">{t.name}</span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold font-mono">ENCRYPTED ASSETS</h2>
@@ -307,6 +331,11 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
+  // Auto-hide when collapsing
+  useEffect(() => {
+    if (!expanded) setShow(false);
+  }, [expanded]);
+
   const handleCopy = () => {
     if(item.decryptedData) {
       navigator.clipboard.writeText(item.decryptedData);
@@ -315,13 +344,28 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
     }
   };
 
+  const getMaskedString = (len: number) => "•".repeat(Math.min(len, 24));
+
   const getSnippet = () => {
      if(item.decryptionFailed) return "••••••••••••••••••••••••";
      if(!item.decryptedData) return "";
-     if(!show) return "••••••••••••••••••••••••";
+     
+     if (item.category === 'PASSWORD') {
+       // Passwords are never shown unmasked in snippet view
+       return getMaskedString(item.decryptedData.length);
+     }
+     
+     if(!show) {
+        // Mask other items by default
+        return getMaskedString(item.decryptedData.length);
+     }
+     
+     // Shown snippet for non-passwords
      const data = item.decryptedData;
      return data.substring(0, 16) + (data.length > 16 ? "..." : "");
   };
+
+  const showRevealToggle = expanded || item.category !== 'PASSWORD';
 
   return (
     <motion.div
@@ -364,9 +408,11 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
         </div>
         
         <div className={`absolute right-2 flex flex-col gap-1 transition-all ${expanded ? 'top-2 opacity-100' : 'top-2 opacity-0 group-hover/secret:opacity-100'}`}>
-          <button onClick={() => setShow(!show)} className="p-1.5 hover:bg-white/20 rounded" title={show ? "Hide Secret" : "Show Secret"}>
-            {show ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
+          {showRevealToggle && (
+            <button onClick={() => setShow(!show)} className="p-1.5 hover:bg-white/20 rounded" title={show ? "Hide Secret" : "Show Secret"}>
+              {show ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          )}
           {!item.decryptionFailed && (
             <button onClick={handleCopy} className="p-1.5 hover:bg-white/20 rounded disabled:opacity-50" title="Copy to Clipboard" disabled={copied}>
               {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
