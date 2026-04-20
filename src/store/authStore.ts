@@ -4,6 +4,8 @@ import { deriveKey, exportKeyStore, importKeyStore } from '../lib/crypto';
 interface User {
   id: string;
   email: string;
+  role?: string;
+  subscriptionPlan?: string;
 }
 
 interface AuthState {

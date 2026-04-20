@@ -8,16 +8,28 @@ datasource db {
 }
 
 model User {
-  id             String          @id @default(uuid())
-  email          String          @unique
-  password       String          // Hashed master password for auth ONLY
-  role           String          @default("user")
-  tenantId       String          @default(uuid())
-  createdAt      DateTime        @default(now())
-  vaults         Vault[]
-  sessions       Session[]
-  authenticators Authenticator[]
-  magicLinks     MagicLink[]
+  id               String          @id @default(uuid())
+  email            String          @unique
+  password         String          // Hashed master password for auth ONLY
+  role             String          @default("user")
+  subscriptionPlan String          @default("free") // free, pro, team, enterprise
+  tenantId         String          @default(uuid())
+  createdAt        DateTime        @default(now())
+  vaults           Vault[]
+  sessions         Session[]
+  authenticators   Authenticator[]
+  magicLinks       MagicLink[]
+  auditLogs        AuditLog[]
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  ip        String?
+  device    String?
+  timestamp DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Authenticator {

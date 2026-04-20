@@ -363,6 +363,58 @@ app.use(cookieParser());
     }
   });
 
+  // --- ADMIN / CREATOR PANEL API ---
+  app.get("/api/admin/metrics", requireAuth, async (req: any, res) => {
+    try {
+      const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (user?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      
+      const totalUsers = await prisma.user.count();
+      const totalVaults = await prisma.vault.count();
+      
+      const userPlans = await prisma.user.groupBy({
+        by: ['subscriptionPlan'],
+        _count: { id: true }
+      });
+      
+      const recentLogs = await prisma.auditLog.findMany({
+        take: 20,
+        orderBy: { timestamp: 'desc' },
+        include: { user: { select: { email: true } } }
+      });
+
+      res.json({ totalUsers, totalVaults, userPlans, recentLogs });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/plans", requireAuth, async (req: any, res) => {
+    try {
+      const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (user?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      // Stub to allow updating plans on specific users, or configuring feature flags.
+      res.json({ success: true, message: "Plans updated" });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // --- SUBSCRIPTIONS ---
+  app.post("/api/billing/upgrade", requireAuth, async (req: any, res) => {
+    try {
+      const { plan } = req.body;
+      const validPlans = ['free', 'pro', 'team', 'enterprise'];
+      if (!validPlans.includes(plan)) return res.status(400).json({ error: "Invalid plan" });
+
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { subscriptionPlan: plan }
+      });
+      await prisma.auditLog.create({
+        data: { userId: req.user.id, action: `Upgraded to ${plan} plan`, ip: req.ip }
+      });
+
+      res.json({ success: true, plan });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Global Error Handler for API
   app.use("/api", (err: any, req: any, res: any, next: any) => {
     console.error("API Error:", err);
