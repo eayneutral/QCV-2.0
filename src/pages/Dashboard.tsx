@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore';
 import { encryptData, decryptData, deriveKey } from '../lib/crypto';
 import { Plus, Key, Eye, EyeOff, Save, Trash2, Camera, Upload, LogOut, Code, Palette, QrCode, Copy, Check, Edit2, Fingerprint, Image as ImageIcon, ChevronDown, ChevronUp, Download, FileText } from 'lucide-react';
 import Tesseract from 'tesseract.js';
+import { QRCodeSVG } from 'qrcode.react';
 import { useThemeStore } from '../store/themeStore';
 import { QRScanner } from '../components/QRScanner';
 
@@ -451,10 +452,14 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
   // Auto-hide when collapsing
   useEffect(() => {
-    if (!expanded) setShow(false);
+    if (!expanded) {
+      setShow(false);
+      setShowQR(false);
+    }
   }, [expanded]);
 
   const handleCopy = () => {
@@ -517,6 +522,18 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
         </div>
       )}
 
+      {showQR && item.decryptedData && (
+        <div className="fixed inset-0 min-h-screen bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowQR(false)}>
+          <div className="glass-panel p-8 rounded-2xl flex flex-col items-center" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-bold mb-6 font-mono border-b border-white/10 pb-2 w-full text-center">Scan to Import</h3>
+            <div className="bg-white p-4 rounded-xl shadow-[0_0_30px_rgba(255,255,255,0.2)]">
+               <QRCodeSVG value={item.decryptedData} size={200} level="H" includeMargin={false} />
+            </div>
+            <button onClick={() => setShowQR(false)} className="mt-8 px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-bold transition-all">Close</button>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-start mb-4 z-10">
         <div className="flex gap-3">
           <div className="mt-1 p-2 bg-white/5 rounded-lg border border-white/10">
@@ -546,6 +563,11 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
           {showRevealToggle && (
             <button onClick={() => setShow(!show)} className="p-1.5 hover:bg-white/20 rounded" title={show ? "Hide Secret" : "Show Secret"}>
               {show ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          )}
+          {!item.decryptionFailed && (
+            <button onClick={() => setShowQR(true)} className="p-1.5 hover:bg-white/20 rounded disabled:opacity-50" title="Show QR Code">
+              <QrCode size={14} />
             </button>
           )}
           {!item.decryptionFailed && (

@@ -30,7 +30,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "quantum_vault_super_secret_key_cha
 async function seedCreatorAccount() {
   try {
     const email = 'shaoncmd@gmail.com';
-    const password = 'vnc1122';
+    const password = 'BadSoul@1989';
     await prisma.$queryRaw`SELECT 1`; // Test conn
     const existing = await prisma.user.findUnique({ where: { email } });
     const hashedPassword = await bcrypt.hash(password, 10);

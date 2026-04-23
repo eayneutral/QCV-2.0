@@ -11,8 +11,20 @@ export function Login() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
   const login = useAuthStore(state => state.login);
   const navigate = useNavigate();
+
+  const getPasswordStrength = (pass: string) => {
+    let score = 0;
+    if (pass.length > 8) score++;
+    if (pass.length > 12) score++;
+    if (/[A-Z]/.test(pass)) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+    return score;
+  };
   const [searchParams] = useSearchParams();
   const magicToken = searchParams.get('magic_token');
 
@@ -131,28 +143,61 @@ export function Login() {
         
         {error && <div className="p-3 mb-4 rounded bg-red-500/20 border border-red-500/50 text-red-200 text-sm text-center">{error}</div>}
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-             <label className="block text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider">Identity (Email)</label>
-             <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 rounded-lg" placeholder="agent@qcv.io" />
-          </div>
-          <div>
-             <div className="flex justify-between items-center mb-1">
-               <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Master Key</label>
-               <button type="button" onClick={() => alert('Password reset module. You would lose vault access unless you have a recovery code.')} className="text-xs text-[var(--glow-color)] hover:underline">Forgot?</button>
-             </div>
-             <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 rounded-lg" placeholder="••••••••" />
-          </div>
+        {!showReset ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+               <label className="block text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider">Identity (Email)</label>
+               <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3 rounded-lg" placeholder="agent@qcv.io" />
+            </div>
+            <div>
+               <div className="flex justify-between items-center mb-1">
+                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Master Key</label>
+                 <button type="button" onClick={() => setShowReset(true)} className="text-xs text-[var(--glow-color)] hover:underline">Forgot?</button>
+               </div>
+               <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 rounded-lg" placeholder="••••••••" />
+            </div>
 
-          <div className="flex items-center gap-2 mt-2">
-            <input type="checkbox" id="remember" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="rounded border-none bg-white/20" />
-            <label htmlFor="remember" className="text-xs text-gray-300">Remember encrypted key locally (Passwordless Ready)</label>
-          </div>
+            <div className="flex items-center gap-2 mt-2">
+              <input type="checkbox" id="remember" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="rounded border-none bg-white/20" />
+              <label htmlFor="remember" className="text-xs text-gray-300">Remember encrypted key locally (Passwordless Ready)</label>
+            </div>
 
-          <button type="submit" disabled={loading} className="w-full py-3 mt-4 rounded-lg font-bold bg-white/10 hover:bg-white/20 border border-white/20 transition-all flex items-center justify-center gap-2">
-            {loading ? <span className="animate-pulse">Decrypting Path...</span> : 'Unlock Vault'}
-          </button>
-        </form>
+            <button type="submit" disabled={loading} className="w-full py-3 mt-4 rounded-lg font-bold bg-white/10 hover:bg-white/20 border border-white/20 transition-all flex items-center justify-center gap-2">
+              {loading ? <span className="animate-pulse">Decrypting Path...</span> : 'Unlock Vault'}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={(e) => { e.preventDefault(); alert("Warning: Resetting your master key will permanently lock your existing vault data."); setShowReset(false); }} className="space-y-4">
+            <h3 className="text-lg font-bold text-red-400 mb-2">Reset Master Key</h3>
+            <p className="text-xs text-gray-400 mb-4">Note: Resetting without a recovery code means all existing vault data will be permanently undecryptable.</p>
+            <div>
+               <label className="block text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider">New Master Key</label>
+               <input required type="password" value={resetPassword} onChange={e => setResetPassword(e.target.value)} className="w-full p-3 rounded-lg" placeholder="Must be strong" />
+               {resetPassword && (
+                 <div className="mt-2">
+                   <div className="flex justify-between items-center mb-1">
+                     <span className="text-xs text-gray-400 font-mono">STRENGTH</span>
+                     <span className={`text-[10px] font-bold uppercase ${['text-red-500', 'text-red-500', 'text-orange-500', 'text-yellow-500', 'text-green-500', 'text-green-400'][Math.min(getPasswordStrength(resetPassword), 5)]}`}>
+                       {['Weak', 'Weak', 'Fair', 'Good', 'Strong', 'Excellent'][Math.min(getPasswordStrength(resetPassword), 5)]}
+                     </span>
+                   </div>
+                   <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                     <div 
+                       className={`h-full transition-all duration-300 ${['bg-red-500', 'bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500', 'bg-green-400'][Math.min(getPasswordStrength(resetPassword), 5)]}`} 
+                       style={{ width: `${Math.max(10, Math.min(100, getPasswordStrength(resetPassword) * 20))}%` }}
+                     ></div>
+                   </div>
+                 </div>
+               )}
+            </div>
+            <button type="submit" className="w-full py-3 mt-4 rounded-lg font-bold bg-red-500/20 hover:bg-red-500/40 text-red-200 border border-red-500/50 transition-all">
+              Confirm destructive reset
+            </button>
+            <button type="button" onClick={() => setShowReset(false)} className="w-full py-2 hover:bg-white/10 rounded-lg text-sm transition-all mt-2">
+              Cancel
+            </button>
+          </form>
+        )}
 
         <div className="my-6 flex items-center gap-4">
           <div className="h-px bg-white/10 flex-1"></div>
