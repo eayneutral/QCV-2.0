@@ -57,6 +57,43 @@ export function Dashboard() {
     { value: 'MEMBERSHIP', label: 'Membership' }
   ];
 
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [bulkTags, setBulkTags] = useState("");
+
+  const toggleSelect = (id: string) => setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+
+  const handleBulkDelete = async () => {
+    if (!confirm("Are you sure you want to delete selected items?")) return;
+    try {
+      await fetch('/api/vault/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedItems })
+      });
+      setSelectedItems([]);
+      fetchItems();
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
+  const handleBulkUpdate = async () => {
+    try {
+      await fetch('/api/vault/bulk-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedItems, category: bulkCategory, addTags: bulkTags })
+      });
+      setShowBulkEdit(false);
+      setSelectedItems([]);
+      fetchItems();
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
   // Inactivity auto-lock
   useEffect(() => {
     let timeout: NodeJS.Timeout;
@@ -554,6 +591,42 @@ export function Dashboard() {
         </select>
       </div>
 
+      {selectedItems.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-4 mb-6 relative z-10 w-full bg-[var(--glow-color)]/20 border border-[var(--glow-color)] p-4 rounded-xl items-center">
+          <span className="font-bold text-[var(--glow-color)] font-mono">{selectedItems.length} items selected</span>
+          <div className="flex gap-2 w-full sm:w-auto overflow-x-auto">
+            <button onClick={() => setShowBulkEdit(true)} className="px-4 py-2 bg-black/40 hover:bg-black/60 text-white rounded-lg transition-all text-sm font-bold whitespace-nowrap">Edit Tags/Category</button>
+            <button onClick={handleBulkDelete} className="px-4 py-2 bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-black rounded-lg transition-all text-sm font-bold whitespace-nowrap">Delete Selected</button>
+            <button onClick={() => setSelectedItems([])} className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-all text-sm whitespace-nowrap">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {showBulkEdit && (
+        <div className="fixed inset-0 min-h-screen bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowBulkEdit(false)}>
+          <div className="glass-panel max-w-md w-full p-6 rounded-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold mb-4 font-mono text-[var(--glow-color)]">Bulk Edit ({selectedItems.length} items)</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-1">NEW CATEGORY (Optional)</label>
+                <select value={bulkCategory} onChange={e => setBulkCategory(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg p-3 outline-none focus:border-[var(--glow-color)] appearance-none">
+                  <option value="" className="bg-black text-white">Leave unchanged</option>
+                  {CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-black text-white">{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                 <label className="block text-xs font-bold text-gray-400 mb-1">ADD TAGS (Comma separated)</label>
+                 <input type="text" value={bulkTags} onChange={(e) => setBulkTags(e.target.value)} placeholder="e.g. archived, legacy" className="w-full bg-black/40 border border-white/10 rounded-lg p-3 font-mono text-sm outline-none focus:border-[var(--glow-color)] transition-all"/>
+              </div>
+            </div>
+            <div className="mt-6 pt-4 border-t border-white/10 flex justify-end gap-3">
+              <button onClick={() => setShowBulkEdit(false)} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-bold transition-all">Cancel</button>
+              <button onClick={handleBulkUpdate} className="px-6 py-2 bg-[var(--glow-color)] text-black hover:brightness-110 rounded-lg font-bold transition-all shadow-[0_0_15px_var(--glow-color)]">Apply Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {loading && items.length === 0 ? (
            <div className="col-span-full py-12 text-center text-gray-400 animate-pulse font-mono tracking-widest">DECRYPTING ASSETS...</div>
@@ -562,7 +635,15 @@ export function Dashboard() {
            const matchesCategory = filterCategory === 'ALL' || item.category === filterCategory;
            return matchesSearch && matchesCategory;
         }).map((item, i) => (
-          <VaultItemCard key={item.id} item={item} index={i} onEdit={() => handleEdit(item)} onDelete={() => handleDelete(item.id)} />
+          <VaultItemCard 
+            key={item.id} 
+            item={item} 
+            index={i} 
+            onEdit={() => handleEdit(item)} 
+            onDelete={() => handleDelete(item.id)} 
+            isSelected={selectedItems.includes(item.id)}
+            onSelect={() => toggleSelect(item.id)}
+          />
         ))}
         {!loading && items.length > 0 && items.filter(item => {
            const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.tags.toLowerCase().includes(searchQuery.toLowerCase());
@@ -576,7 +657,7 @@ export function Dashboard() {
   );
 }
 
-function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, index: number, onEdit: () => void, onDelete: () => void }) {
+function VaultItemCard({ item, index, onEdit, onDelete, isSelected, onSelect }: { item: VaultItem, index: number, onEdit: () => void, onDelete: () => void, isSelected?: boolean, onSelect?: () => void }) {
   const [show, setShow] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -704,9 +785,18 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
       whileHover={{ scale: 1.02, boxShadow: "0 25px 30px -12px rgba(0,0,0,0.5)" }}
-      className="glass-panel p-5 rounded-2xl flex flex-col group relative overflow-hidden"
+      className={`glass-panel p-5 pl-12 rounded-2xl flex flex-col group relative overflow-hidden transition-all ${isSelected ? 'border-[var(--glow-color)] bg-[var(--glow-color)]/10' : ''}`}
     >
       <div className="absolute inset-0 bg-gradient-to-br from-[var(--glow-color)] to-transparent opacity-0 group-hover:opacity-20 transition-opacity duration-500 rounded-2xl pointer-events-none"></div>
+
+      <div className={`absolute top-5 left-4 z-20 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+        <button 
+          onClick={(e) => { e.stopPropagation(); onSelect && onSelect(); }} 
+          className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-[var(--glow-color)] border-[var(--glow-color)] text-black' : 'border-white/30 hover:border-white/60'}`}
+        >
+          {isSelected && <Check size={14} />}
+        </button>
+      </div>
 
       {confirmDelete && (
         <div className="absolute inset-0 bg-black/95 z-30 flex flex-col items-center justify-center p-4 rounded-2xl backdrop-blur-md">

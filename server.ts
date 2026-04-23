@@ -364,6 +364,48 @@ app.use(cookieParser());
     }
   });
 
+  app.post("/api/vault/bulk-delete", requireAuth, async (req: any, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) return res.status(400).json({ error: "Invalid ids" });
+      await prisma.vault.deleteMany({ where: { id: { in: ids }, userId: req.user.id } });
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/vault/bulk-update", requireAuth, async (req: any, res) => {
+    try {
+      const { ids, category, addTags } = req.body;
+      if (!Array.isArray(ids)) return res.status(400).json({ error: "Invalid ids" });
+      
+      const items = await prisma.vault.findMany({ where: { id: { in: ids }, userId: req.user.id } });
+      
+      for (const item of items) {
+        let newTags = item.tags;
+        if (addTags) {
+          const currentTagsList = item.tags.split(',').map(t => t.trim()).filter(Boolean);
+          const newTagsList = addTags.split(',').map((t: string) => t.trim()).filter(Boolean);
+          const merged = Array.from(new Set([...currentTagsList, ...newTagsList]));
+          newTags = merged.join(', ');
+        }
+        
+        const newCategory = category || item.category;
+
+        if (newTags !== item.tags || newCategory !== item.category) {
+          await prisma.vault.update({
+            where: { id: item.id },
+            data: { category: newCategory, tags: newTags }
+          });
+        }
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.delete("/api/vault/:id", requireAuth, async (req: any, res) => {
     try {
       await prisma.vault.deleteMany({ where: { id: req.params.id, userId: req.user.id } });
