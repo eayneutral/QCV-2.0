@@ -364,6 +364,41 @@ app.use(cookieParser());
   });
 
   // --- ADMIN / CREATOR PANEL API ---
+  app.get("/api/admin/users", requireAuth, async (req: any, res) => {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (u?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      const users = await prisma.user.findMany({
+        select: { id: true, email: true, role: true, subscriptionPlan: true, createdAt: true },
+        orderBy: { createdAt: 'desc' }
+      });
+      res.json({ users });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.put("/api/admin/users/:id", requireAuth, async (req: any, res) => {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (u?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      const { role, subscriptionPlan } = req.body;
+      const updated = await prisma.user.update({
+        where: { id: req.params.id },
+        data: { role, subscriptionPlan }
+      });
+      res.json({ success: true, user: updated });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete("/api/admin/users/:id", requireAuth, async (req: any, res) => {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (u?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      if (req.user.id === req.params.id) return res.status(400).json({ error: "Cannot delete self" });
+      await prisma.user.delete({ where: { id: req.params.id } });
+      res.json({ success: true });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get("/api/admin/metrics", requireAuth, async (req: any, res) => {
     try {
       const user = await prisma.user.findUnique({ where: { id: req.user.id } });

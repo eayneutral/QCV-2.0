@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import { encryptData, decryptData } from '../lib/crypto';
-import { Plus, Key, Eye, EyeOff, Save, Trash2, Camera, Upload, LogOut, Code, Palette, QrCode, Copy, Check, Edit2, Fingerprint, Image as ImageIcon, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Key, Eye, EyeOff, Save, Trash2, Camera, Upload, LogOut, Code, Palette, QrCode, Copy, Check, Edit2, Fingerprint, Image as ImageIcon, ChevronDown, ChevronUp, Download, FileText } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import { useThemeStore } from '../store/themeStore';
 import { QRScanner } from '../components/QRScanner';
@@ -171,6 +171,58 @@ export function Dashboard() {
     }
   };
 
+  const handleExportVault = () => {
+    // Generate secure backup of encrypted items directly (Zero trust context preserved)
+    const exportData = items.map(i => ({
+      title: i.title,
+      category: i.category,
+      tags: i.tags,
+      encryptedData: i.encryptedData
+    }));
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `qcv_vault_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportVault = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        setLoading(true);
+        for (const item of parsed) {
+          if (item.title && item.encryptedData && item.category) {
+            await fetch('/api/vault', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: item.title,
+                category: item.category,
+                tags: item.tags || '',
+                encryptedData: item.encryptedData
+              })
+            });
+          }
+        }
+        await fetchItems();
+        alert('Vault imported successfully!');
+      } else {
+        throw new Error("Invalid format");
+      }
+    } catch(err) {
+      alert('Invalid backup file format');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!encryptionKey && user) {
     return (
       <div className="flex-1 flex items-center justify-center p-6 mt-[60px]">
@@ -242,20 +294,29 @@ export function Dashboard() {
         )}
       </AnimatePresence>
 
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h2 className="text-xl font-bold font-mono">ENCRYPTED ASSETS</h2>
-        <button onClick={() => {
-          if (showAdd && !editingId) {
-             setShowAdd(false);
-          } else {
-             setShowAdd(true);
-             setEditingId(null);
-             setTitle('');
-             setSecretData('');
-          }
-        }} className="px-4 py-2 bg-[var(--glow-color)] hover:bg-white/20 transition-all rounded-lg flex items-center gap-2 font-bold backdrop-blur-md">
-          <Plus size={18} /> New Asset
-        </button>
+        <div className="flex gap-2">
+          <label className="px-4 py-2 bg-white/5 hover:bg-white/10 transition-all rounded-lg flex items-center gap-2 font-bold backdrop-blur-md cursor-pointer border border-white/10" title="Import Vault Backup relative to your key">
+            <Upload size={18} /> Import
+            <input type="file" className="hidden" accept=".json" onChange={handleImportVault} />
+          </label>
+          <button onClick={handleExportVault} className="px-4 py-2 bg-white/5 hover:bg-white/10 transition-all rounded-lg flex items-center gap-2 font-bold backdrop-blur-md border border-white/10" title="Export Secure Encrypted Vault JSON">
+            <Download size={18} /> Export
+          </button>
+          <button onClick={() => {
+            if (showAdd && !editingId) {
+               setShowAdd(false);
+            } else {
+               setShowAdd(true);
+               setEditingId(null);
+               setTitle('');
+               setSecretData('');
+            }
+          }} className="px-4 py-2 bg-[var(--glow-color)] hover:bg-white/20 transition-all rounded-lg flex items-center gap-2 font-bold backdrop-blur-md">
+            <Plus size={18} /> New Asset
+          </button>
+        </div>
       </div>
 
       <AnimatePresence>
@@ -367,6 +428,15 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
 
   const showRevealToggle = expanded || item.category !== 'PASSWORD';
 
+  const getCategoryIcon = () => {
+    switch (item.category) {
+      case 'PASSWORD': return <Key size={16} className="text-yellow-400" />;
+      case 'API_KEY': return <Code size={16} className="text-blue-400" />;
+      case 'NOTE': return <FileText size={16} className="text-green-400" />;
+      default: return <FileText size={16} className="text-gray-400" />;
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -388,9 +458,14 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
       )}
 
       <div className="flex justify-between items-start mb-4 z-10">
-        <div>
-          <h3 className="font-bold text-lg">{item.title}</h3>
-          <span className="text-xs px-2 py-1 rounded bg-white/10 text-gray-300 inline-block mt-1">{item.category}</span>
+        <div className="flex gap-3">
+          <div className="mt-1 p-2 bg-white/5 rounded-lg border border-white/10">
+            {getCategoryIcon()}
+          </div>
+          <div>
+            <h3 className="font-bold text-lg leading-tight">{item.title}</h3>
+            <span className="text-xs text-gray-400 flex items-center gap-1 mt-1">{item.category}</span>
+          </div>
         </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
           <button onClick={onEdit} className="text-gray-500 hover:text-white p-1 transition-all" title="Edit Asset">
