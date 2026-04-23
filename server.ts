@@ -13,18 +13,7 @@ const rpName = 'Quantum Credentials Vault';
 const rpID = process.env.NODE_ENV === 'production' ? new URL(process.env.APP_URL || 'https://example.com').hostname : 'localhost';
 const origin = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
 
-// Ensure a valid connection string structure is passed to Prisma to prevent initialization crashes
-const dbUrl = process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("postgres")
-  ? process.env.DATABASE_URL
-  : "postgresql://dummy:dummy@localhost:5432/qcv";
-
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: dbUrl,
-    },
-  },
-});
+const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "quantum_vault_super_secret_key_change_in_production";
 
 async function seedCreatorAccount() {
@@ -330,6 +319,9 @@ app.use(cookieParser());
       const vault = await prisma.vault.create({
         data: { userId: req.user.id, title, category, tags, encryptedData }
       });
+      await prisma.vaultVersion.create({
+        data: { vaultId: vault.id, encryptedData }
+      });
       res.json({ vault });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -348,7 +340,25 @@ app.use(cookieParser());
         where: { id: req.params.id },
         data: { title, category, tags, encryptedData }
       });
+
+      if (existing.encryptedData !== encryptedData) {
+        await prisma.vaultVersion.create({
+          data: { vaultId: vault.id, encryptedData }
+        });
+      }
       res.json({ vault });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/vault/:id/versions", requireAuth, async (req: any, res) => {
+    try {
+      const existing = await prisma.vault.findFirst({ where: { id: req.params.id, userId: req.user.id }});
+      if (!existing) return res.status(404).json({ error: "Item not found" });
+
+      const versions = await prisma.vaultVersion.findMany({ where: { vaultId: req.params.id }, orderBy: { createdAt: "desc" } });
+      res.json({ versions });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -364,6 +374,51 @@ app.use(cookieParser());
   });
 
   // --- ADMIN / CREATOR PANEL API ---
+  app.get("/api/admin/roles", requireAuth, async (req: any, res) => {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (u?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      const roles = await prisma.customRole.findMany({
+        orderBy: { createdAt: 'desc' }
+      });
+      res.json({ roles });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/roles", requireAuth, async (req: any, res) => {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (u?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      const { name, permissions, description } = req.body;
+      const role = await prisma.customRole.create({
+        data: { name, permissions: JSON.stringify(permissions || []), description }
+      });
+      res.json({ role });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.put("/api/admin/roles/:id", requireAuth, async (req: any, res) => {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (u?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      const { name, permissions, description } = req.body;
+      const role = await prisma.customRole.update({
+        where: { id: req.params.id },
+        data: { name, permissions: JSON.stringify(permissions || []), description }
+      });
+      res.json({ role });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete("/api/admin/roles/:id", requireAuth, async (req: any, res) => {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (u?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      await prisma.customRole.delete({ where: { id: req.params.id } });
+      res.json({ success: true });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get("/api/admin/users", requireAuth, async (req: any, res) => {
     try {
       const u = await prisma.user.findUnique({ where: { id: req.user.id } });
@@ -447,6 +502,32 @@ app.use(cookieParser());
       });
 
       res.json({ success: true, plan });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // --- GLOBAL SETTINGS API ---
+  app.get("/api/settings/global", async (req, res) => {
+    try {
+      const settings = await prisma.globalSetting.findMany();
+      res.json({ settings });
+    } catch(e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/settings/global", requireAuth, async (req: any, res) => {
+    try {
+      const u = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (u?.role !== 'admin') return res.status(403).json({ error: "Access denied" });
+      
+      const { settings } = req.body;
+      
+      for (const {key, value} of settings) {
+        await prisma.globalSetting.upsert({
+          where: { key },
+          update: { value },
+          create: { key, value }
+        });
+      }
+      res.json({ success: true });
     } catch(e: any) { res.status(500).json({ error: e.message }); }
   });
 

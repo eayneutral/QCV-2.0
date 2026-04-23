@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useThemeStore } from './store/themeStore';
 import { useAuthStore } from './store/authStore';
 import { Home } from './pages/Home';
@@ -18,19 +18,57 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const theme = useThemeStore(state => state.theme);
+  const [globalOverrides, setGlobalOverrides] = useState<any>({});
 
   useEffect(() => {
     document.documentElement.className = theme;
   }, [theme]);
 
-  // Global Navigation layout would ideally wrap routes, but adding absolute nav for Pricing/Admin links here
+  // Fetch Global Settings
+  useEffect(() => {
+    fetch('/api/settings/global')
+      .then(res => res.json())
+      .then(data => {
+        if(data.settings) {
+          const overrides: any = {};
+          data.settings.forEach((s: any) => overrides[s.key] = s.value);
+          setGlobalOverrides(overrides);
+          
+          if (overrides.globalFavicon) {
+            let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+            if (!link) {
+              link = document.createElement('link');
+              link.rel = 'icon';
+              document.head.appendChild(link);
+            }
+            link.href = overrides.globalFavicon;
+          }
+        }
+      })
+      .catch(console.error);
+  }, []);
+
   return (
     <Router>
+      {globalOverrides.primaryColor && (
+        <style dangerouslySetInnerHTML={{__html: `
+          :root {
+            --glow-color: ${globalOverrides.primaryColor} !important;
+            font-family: "${globalOverrides.globalFont || 'Inter'}", sans-serif !important;
+          }
+          body {
+            ${globalOverrides.globalGradient ? `background: ${globalOverrides.globalGradient} !important;` : ''}
+          }
+        `}} />
+      )}
       <div className="min-h-screen relative overflow-hidden flex flex-col">
         <QuantumParticles />
         
         {/* Global floating nav block for new pages */}
-        <div className="absolute top-4 left-4 z-50 flex gap-4">
+        <div className="absolute top-4 left-4 z-50 flex gap-4 items-center">
+          {globalOverrides.globalLogo && (
+             <img src={globalOverrides.globalLogo} alt="Logo" className="h-8 max-w-xs object-contain mr-2" />
+          )}
           <a href="/dashboard" className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full text-xs font-bold backdrop-blur-md transition-colors border border-white/5">Vault</a>
           <a href="/pricing" className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full text-xs font-bold backdrop-blur-md transition-colors border border-white/5">Upgrade</a>
           {useAuthStore.getState().user?.role === 'admin' && (

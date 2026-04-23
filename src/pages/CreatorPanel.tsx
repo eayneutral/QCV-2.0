@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, Database, Activity, Shield, AlertTriangle, Trash2, Edit2, Image as ImageIcon, Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Users, Database, Activity, Shield, AlertTriangle, Trash2, Edit2, Image as ImageIcon, Check, Save } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
 import { useAuthStore } from "../store/authStore";
 
 interface AdminMetrics {
@@ -22,20 +22,56 @@ export function CreatorPanel() {
   const { user } = useAuthStore();
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [roles, setRoles] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<'metrics'|'users'|'branding'>('metrics');
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // New Role Form
+  const [showRoleForm, setShowRoleForm] = useState(false);
+  const [editingRole, setEditingRole] = useState<any>(null);
+  const [roleName, setRoleName] = useState("");
+  const [roleDesc, setRoleDesc] = useState("");
+  const [rolePerms, setRolePerms] = useState<string[]>([]);
+
+  // Global Settings State
+  const [globalLogo, setGlobalLogo] = useState('');
+  const [globalFavicon, setGlobalFavicon] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('#00d4ff');
+  const [secondaryColor, setSecondaryColor] = useState('#090979');
+  const [globalFont, setGlobalFont] = useState('Inter');
+  const [globalGradient, setGlobalGradient] = useState('');
+
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const faviconInputRef = useRef<HTMLInputElement>(null);
 
   const fetchData = async () => {
     try {
-      const [mRes, uRes] = await Promise.all([
+      const [mRes, uRes, sRes, rRes] = await Promise.all([
         fetch('/api/admin/metrics'),
-        fetch('/api/admin/users')
+        fetch('/api/admin/users'),
+        fetch('/api/settings/global'),
+        fetch('/api/admin/roles')
       ]);
       const mData = await mRes.json();
       const uData = await uRes.json();
+      const sData = await sRes.json();
+      const rData = await rRes.json();
+      
       if(mData.error) setError(mData.error);
       else setMetrics(mData);
       if(uData.users) setUsers(uData.users);
+      if(rData.roles) setRoles(rData.roles);
+      if(sData.settings) {
+        sData.settings.forEach((s: any) => {
+          if(s.key === 'globalLogo') setGlobalLogo(s.value);
+          if(s.key === 'globalFavicon') setGlobalFavicon(s.value);
+          if(s.key === 'primaryColor') setPrimaryColor(s.value);
+          if(s.key === 'secondaryColor') setSecondaryColor(s.value);
+          if(s.key === 'globalFont') setGlobalFont(s.value);
+          if(s.key === 'globalGradient') setGlobalGradient(s.value);
+        });
+      }
     } catch(e: any) {
       setError(e.message);
     }
@@ -65,6 +101,84 @@ export function CreatorPanel() {
       fetchData();
     } catch(e) {
       alert("Failed to delete user");
+    }
+  };
+
+  const handleSaveRole = async () => {
+    try {
+      const url = editingRole ? `/api/admin/roles/${editingRole.id}` : '/api/admin/roles';
+      const method = editingRole ? 'PUT' : 'POST';
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: roleName, description: roleDesc, permissions: rolePerms })
+      });
+      setShowRoleForm(false);
+      fetchData();
+    } catch(e) {
+      alert("Failed to save role");
+    }
+  };
+
+  const handleDeleteRole = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this role?")) return;
+    try {
+      await fetch(`/api/admin/roles/${id}`, { method: 'DELETE' });
+      fetchData();
+    } catch(e) {
+      alert("Failed to delete role");
+    }
+  };
+
+  const openRoleForm = (role: any = null) => {
+    if (role) {
+      setEditingRole(role);
+      setRoleName(role.name);
+      setRoleDesc(role.description || '');
+      setRolePerms(JSON.parse(role.permissions || '[]'));
+    } else {
+      setEditingRole(null);
+      setRoleName('');
+      setRoleDesc('');
+      setRolePerms([]);
+    }
+    setShowRoleForm(true);
+  };
+
+  const handleImageRead = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setter(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveBrandSettings = async () => {
+    setSavingSettings(true);
+    try {
+      const settings = [
+        { key: 'globalLogo', value: globalLogo },
+        { key: 'globalFavicon', value: globalFavicon },
+        { key: 'primaryColor', value: primaryColor },
+        { key: 'secondaryColor', value: secondaryColor },
+        { key: 'globalFont', value: globalFont },
+        { key: 'globalGradient', value: globalGradient },
+      ];
+      await fetch('/api/admin/settings/global', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings })
+      });
+      alert('Brand settings saved globally.');
+      // Force reload to apply settings
+      window.location.reload();
+    } catch (e: any) {
+      alert('Failed to save settings: ' + e.message);
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -166,7 +280,47 @@ export function CreatorPanel() {
         )}
 
         {activeTab === 'users' && (
-          <motion.div key="users" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="users" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
+            <div className="glass-panel rounded-2xl border-white/5 overflow-hidden">
+              <div className="p-4 bg-black/40 border-b border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Shield size={18} className="text-orange-400" />
+                  <h3 className="font-bold font-mono tracking-widest">CUSTOM ROLES</h3>
+                </div>
+                <button onClick={() => openRoleForm()} className="px-4 py-1 text-xs bg-orange-500/20 text-orange-400 font-bold rounded-lg hover:bg-orange-500 hover:text-black transition-all">
+                  + Create Role
+                </button>
+              </div>
+              <div className="overflow-x-auto p-4">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-gray-400 mb-4 block">
+                    <tr className="flex">
+                      <th className="w-48 font-normal tracking-wide">ROLE NAME</th>
+                      <th className="flex-1 font-normal tracking-wide">PERMISSIONS</th>
+                      <th className="w-20 font-normal tracking-wide text-right">ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody className="flex flex-col gap-2">
+                    {roles.map(r => (
+                      <tr key={r.id} className="flex items-center glass-panel p-2 rounded-lg hover:border-white/20 transition-all border border-transparent">
+                        <td className="w-48 px-4 font-mono text-orange-200">{r.name}</td>
+                        <td className="flex-1 px-4 text-xs font-mono text-gray-400">{(JSON.parse(r.permissions||'[]')).join(', ') || 'None'}</td>
+                        <td className="w-20 px-4 text-right flex gap-2 justify-end">
+                          <button onClick={() => openRoleForm(r)} className="p-2 text-blue-400 hover:bg-blue-400/20 rounded transition-all">
+                            <Edit2 size={16} />
+                          </button>
+                          <button onClick={() => handleDeleteRole(r.id)} className="p-2 text-red-500 hover:bg-red-500/20 rounded transition-all">
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {roles.length === 0 && <div className="text-gray-500 p-4 font-mono text-center">No custom roles defined.</div>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div className="glass-panel rounded-2xl border-white/5 overflow-hidden">
               <div className="p-4 bg-black/40 border-b border-white/5 flex items-center gap-2">
                 <Users size={18} className="text-orange-400" />
@@ -195,6 +349,7 @@ export function CreatorPanel() {
                           >
                             <option value="user">User</option>
                             <option value="admin">Admin</option>
+                            {roles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
                           </select>
                         </td>
                         <td className="w-32 px-4">
@@ -236,32 +391,121 @@ export function CreatorPanel() {
                <div className="space-y-6">
                  <div>
                    <label className="block text-sm font-bold text-gray-300 mb-2">Upload Platform Logo</label>
-                   <div className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center hover:bg-white/5 transition-all hover:border-orange-500/50 cursor-pointer">
-                      <ImageIcon size={32} className="text-gray-500 mb-4" />
-                      <span className="text-sm font-bold group-hover:text-white">Click to upload logo files (PNG, SVG)</span>
-                   </div>
+                   <label className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center hover:bg-white/5 transition-all hover:border-orange-500/50 cursor-pointer overflow-hidden relative min-h-[160px]">
+                      {globalLogo ? (
+                         <img src={globalLogo} alt="Logo preview" className="absolute inset-0 w-full h-full object-contain p-4" />
+                      ) : (
+                         <>
+                           <ImageIcon size={32} className="text-gray-500 mb-4" />
+                           <span className="text-sm font-bold group-hover:text-white">Click to upload logo files (PNG, SVG)</span>
+                         </>
+                      )}
+                      <input type="file" accept="image/*" className="hidden" tabIndex={-1} onChange={(e) => handleImageRead(e, setGlobalLogo)} />
+                   </label>
+                   {globalLogo && <button onClick={() => setGlobalLogo('')} className="text-xs text-red-500 mt-2 hover:underline">Remove Logo</button>}
+                 </div>
+                 
+                 <div>
+                   <label className="block text-sm font-bold text-gray-300 mb-2">Upload Global Favicon (ICO, PNG)</label>
+                   <label className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center hover:bg-white/5 transition-all hover:border-orange-500/50 cursor-pointer overflow-hidden relative min-h-[160px]">
+                      {globalFavicon ? (
+                         <img src={globalFavicon} alt="Favicon preview" className="absolute inset-0 w-16 h-16 m-auto object-contain p-1 rounded" />
+                      ) : (
+                         <>
+                           <ImageIcon size={32} className="text-gray-500 mb-4" />
+                           <span className="text-sm font-bold group-hover:text-white">Click to upload favicon</span>
+                         </>
+                      )}
+                      <input type="file" accept="image/*" className="hidden" tabIndex={-1} onChange={(e) => handleImageRead(e, setGlobalFavicon)} />
+                   </label>
+                   {globalFavicon && <button onClick={() => setGlobalFavicon('')} className="text-xs text-red-500 mt-2 hover:underline">Remove Favicon</button>}
                  </div>
 
                  <div>
-                    <label className="block text-sm font-bold text-gray-300 mb-2">Global UI Color Override</label>
+                    <label className="block text-sm font-bold text-gray-300 mb-2">Global UI Primary Color</label>
                     <div className="flex gap-4 border border-white/10 rounded-lg p-3 bg-black/40">
-                      <input type="color" defaultValue="#ff8a00" className="bg-transparent border-0 w-8 h-8 rounded shrink-0 cursor-pointer" />
-                      <div className="flex-1 border-l border-white/10 pl-4">
-                        <p className="text-xs text-gray-400 font-mono">#FF8A00 - Used for Admin accents</p>
+                      <input type="color" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)} className="bg-transparent border-0 w-8 h-8 rounded shrink-0 cursor-pointer" />
+                      <div className="flex-1 border-l border-white/10 pl-4 flex items-center">
+                        <p className="text-xs text-gray-400 font-mono uppercase">{primaryColor} - Used for accent and glows</p>
                       </div>
-                      <button className="px-4 py-1 bg-white/10 hover:bg-orange-500 hover:text-white rounded text-xs font-bold transition-all">Apply</button>
                     </div>
+                 </div>
+
+                 <div>
+                    <label className="block text-sm font-bold text-gray-300 mb-2">Global UI Secondary Color</label>
+                    <div className="flex gap-4 border border-white/10 rounded-lg p-3 bg-black/40">
+                      <input type="color" value={secondaryColor} onChange={e => setSecondaryColor(e.target.value)} className="bg-transparent border-0 w-8 h-8 rounded shrink-0 cursor-pointer" />
+                      <div className="flex-1 border-l border-white/10 pl-4 flex items-center">
+                        <p className="text-xs text-gray-400 font-mono uppercase">{secondaryColor} - Used for backgrounds and dark accents</p>
+                      </div>
+                    </div>
+                 </div>
+
+                 <div>
+                    <label className="block text-sm font-bold text-gray-300 mb-2">Global Background Gradient (CSS override)</label>
+                    <input 
+                       type="text" 
+                       value={globalGradient}
+                       onChange={e => setGlobalGradient(e.target.value)}
+                       placeholder="e.g. linear-gradient(to right, #000, #333)" 
+                       className="w-full bg-black/40 border border-white/10 rounded-lg p-3 font-mono text-sm outline-none focus:border-orange-500/50 transition-all"
+                    />
+                 </div>
+
+                 <div>
+                    <label className="block text-sm font-bold text-gray-300 mb-2">Typography Setup</label>
+                    <select 
+                       value={globalFont}
+                       onChange={e => setGlobalFont(e.target.value)}
+                       className="w-full bg-black/40 border border-white/10 rounded-lg p-3 outline-none focus:border-orange-500/50 transition-all"
+                    >
+                       <option value="Inter">Inter (System Default)</option>
+                       <option value="JetBrains Mono">JetBrains Mono</option>
+                       <option value="Space Grotesk">Space Grotesk</option>
+                       <option value="Playfair Display">Playfair Display</option>
+                    </select>
                  </div>
 
                </div>
                
                <div className="mt-8 pt-6 border-t border-white/10 flex justify-end">
-                 <button className="px-6 py-2 bg-orange-500 hover:bg-orange-400 text-black font-bold rounded-lg transition-all shadow-[0_0_20px_rgba(249,115,22,0.4)]">
-                   Save Brand Settings
+                 <button onClick={handleSaveBrandSettings} disabled={savingSettings} className="px-6 py-2 bg-orange-500 hover:bg-orange-400 text-black font-bold rounded-lg transition-all shadow-[0_0_20px_rgba(249,115,22,0.4)] disabled:opacity-50 flex items-center gap-2">
+                   {savingSettings ? <span className="animate-pulse">Saving...</span> : <><Save size={18} /> Save Brand Settings</>}
                  </button>
                </div>
              </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence mode="wait">
+        {showRoleForm && (
+          <div className="fixed inset-0 min-h-screen bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowRoleForm(false)}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="glass-panel max-w-lg w-full p-6 rounded-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+              <h3 className="text-xl font-bold mb-4 font-mono flex items-center gap-2">
+                <Shield size={20} className="text-orange-400" /> {editingRole ? 'EDIT ROLE' : 'CREATE ROLE'}
+              </h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">ROLE NAME</label>
+                  <input type="text" value={roleName} onChange={e => setRoleName(e.target.value)} placeholder="e.g. manager" className="w-full bg-black/40 border border-white/10 rounded-lg p-2 font-mono text-sm outline-none focus:border-orange-500/50" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">DESCRIPTION</label>
+                  <input type="text" value={roleDesc} onChange={e => setRoleDesc(e.target.value)} placeholder="Role description..." className="w-full bg-black/40 border border-white/10 rounded-lg p-2 font-mono text-sm outline-none focus:border-orange-500/50" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">PERMISSIONS (Comma separated strings)</label>
+                  <input type="text" value={rolePerms.join(', ')} onChange={e => setRolePerms(e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder="vault:read, users:manage" className="w-full bg-black/40 border border-white/10 rounded-lg p-2 font-mono text-sm outline-none focus:border-orange-500/50" />
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-white/10 flex justify-end gap-3">
+                <button onClick={() => setShowRoleForm(false)} className="px-4 py-2 hover:bg-white/10 rounded-lg font-bold transition-all">Cancel</button>
+                <button onClick={handleSaveRole} disabled={!roleName} className="px-4 py-2 bg-orange-500 hover:bg-orange-400 text-black rounded-lg font-bold transition-all disabled:opacity-50">Save Role</button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

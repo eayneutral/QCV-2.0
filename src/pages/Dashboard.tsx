@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import { encryptData, decryptData, deriveKey } from '../lib/crypto';
-import { Plus, Key, Eye, EyeOff, Save, Trash2, Camera, Upload, LogOut, Code, Palette, QrCode, Copy, Check, Edit2, Fingerprint, Image as ImageIcon, ChevronDown, ChevronUp, Download, FileText } from 'lucide-react';
+import { Plus, Key, Eye, EyeOff, Save, Trash2, Camera, Upload, LogOut, Code, Palette, QrCode, Copy, Check, Edit2, Fingerprint, Image as ImageIcon, ChevronDown, ChevronUp, Download, FileText, AlertTriangle, CreditCard, Shield, User, History } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import { QRCodeSVG } from 'qrcode.react';
 import { useThemeStore } from '../store/themeStore';
@@ -36,6 +36,26 @@ export function Dashboard() {
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [showBiometricModal, setShowBiometricModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('ALL');
+  const [appError, setAppError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (appError) {
+      const timer = setTimeout(() => setAppError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [appError]);
+
+
+  const CATEGORIES = [
+    { value: 'API_KEY', label: 'API Key' },
+    { value: 'PASSWORD', label: 'Password' },
+    { value: 'NOTE', label: 'Secure Note' },
+    { value: 'CREDIT_CARD', label: 'Credit Card' },
+    { value: 'SOFTWARE_LICENSE', label: 'Software License' },
+    { value: 'MEMBERSHIP', label: 'Membership' }
+  ];
 
   // Inactivity auto-lock
   useEffect(() => {
@@ -76,7 +96,7 @@ export function Dashboard() {
     try {
       const res = await fetch('/api/vault');
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || 'Network error');
 
       // Decrypt all items
       const decryptedItems = await Promise.all(data.vaults.map(async (item: VaultItem) => {
@@ -85,12 +105,14 @@ export function Dashboard() {
            return { ...item, decryptedData: decrypted, decryptionFailed: false };
         } catch(e) {
            console.error(`[Decryption Error] Failed to decrypt asset #${item.id} (${item.title}):`, e);
+           setAppError(`Decryption failed for asset: ${item.title}`);
            return { ...item, decryptedData: "Encrypted Payload (Locked)", decryptionFailed: true };
         }
       }));
       setItems(decryptedItems);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setAppError(`Fetch failed: ${e.message}`);
     } finally {
       setLoading(false);
     }
@@ -127,16 +149,25 @@ export function Dashboard() {
       setTitle('');
       setSecretData('');
       fetchItems();
-    } catch(e) {
+      setAppError(null);
+    } catch(e: any) {
       console.error(e);
+      setAppError(`Failed to save: ${e.message}`);
       setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
     setLoading(true);
-    await fetch(`/api/vault/${id}`, { method: 'DELETE' });
-    fetchItems();
+    try {
+      const res = await fetch(`/api/vault/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Deletion failed');
+      fetchItems();
+    } catch (e: any) {
+      console.error(e);
+      setAppError(`Delete failed: ${e.message}`);
+      setLoading(false);
+    }
   };
 
   const handleEdit = (item: VaultItem) => {
@@ -171,9 +202,9 @@ export function Dashboard() {
       const result = await Tesseract.recognize(file, 'eng');
       setSecretData(prev => prev + (prev ? '\n' : '') + result.data.text.trim());
       if(!title) setTitle('OCR Extracted');
-    } catch (err) {
+    } catch (err: any) {
       console.error("OCR Failed", err);
-      alert("Failed to extract text from image.");
+      setAppError(`OCR Failed: ${err.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -194,9 +225,9 @@ export function Dashboard() {
         const result = await Tesseract.recognize(file, 'eng');
         setSecretData(prev => prev + (prev ? '\n' : '') + result.data.text.trim());
         if (!title) setTitle('OCR Extracted');
-      } catch (err) {
+      } catch (err: any) {
         console.error("OCR Failed", err);
-        alert("Failed to extract text from image.");
+        setAppError(`OCR Failed: ${err.message || 'Unknown error'}`);
       } finally {
         setLoading(false);
       }
@@ -225,9 +256,9 @@ export function Dashboard() {
       const vData = await vRes.json();
       if (!vRes.ok) throw new Error(vData.error);
       
-      alert("Biometric device registered successfully");
+      setAppError("Biometric device registered successfully");
     } catch(e: any) {
-      alert("Biometric registration failed: " + e.message);
+      setAppError("Biometric registration failed: " + e.message);
     } finally {
       setRegisteringBiometric(false);
     }
@@ -274,12 +305,12 @@ export function Dashboard() {
           }
         }
         await fetchItems();
-        alert('Vault imported successfully!');
+        setAppError('Vault imported successfully!');
       } else {
         throw new Error("Invalid format");
       }
-    } catch(err) {
-      alert('Invalid backup file format');
+    } catch(err: any) {
+      setAppError(`Import failed: ${err.message || 'Invalid backup file format'}`);
     } finally {
       setLoading(false);
     }
@@ -293,8 +324,8 @@ export function Dashboard() {
       const key = await deriveKey(unlockPassword, user.email);
       useAuthStore.getState().setEncryptionKey(key);
       setUnlockPassword('');
-    } catch(e) {
-      alert("Failed to unlock.");
+    } catch(e: any) {
+      setAppError("Failed to unlock. Incorrect Master Password or corrupted data.");
     } finally {
       setUnlocking(false);
     }
@@ -341,6 +372,25 @@ export function Dashboard() {
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-8 max-w-6xl mx-auto w-full relative">
+      <AnimatePresence>
+        {appError && (
+          <motion.div 
+            initial={{ opacity: 0, y: -50 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            exit={{ opacity: 0, y: -50 }} 
+            className="fixed top-4 right-4 z-50 bg-red-500/20 backdrop-blur-md border border-red-500 max-w-sm w-full p-4 rounded-lg shadow-lg flex items-start gap-3"
+          >
+            <AlertTriangle className="text-red-400 shrink-0 mt-0.5" size={20} />
+            <div className="flex-1 text-sm text-red-200 font-medium">
+              {appError}
+            </div>
+            <button onClick={() => setAppError(null)} className="text-red-400 hover:text-white transition-colors">
+              &times;
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <header className="flex justify-between items-center mb-8 glass-panel p-4 rounded-2xl">
         <div>
           <h1 className="text-2xl font-mono font-bold tracking-tight">QCV Nexus</h1>
@@ -439,11 +489,9 @@ export function Dashboard() {
                 <h3 className="font-bold text-lg">{editingId ? 'Edit Asset' : 'New Encrypted Asset'}</h3>
               </div>
               <div className="flex gap-4">
-                <input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="Asset Title" className="flex-1 p-3 rounded-lg" />
-                <select value={category} onChange={e=>setCategory(e.target.value)} className="p-3 rounded-lg w-40">
-                  <option value="API_KEY">API Key</option>
-                  <option value="PASSWORD">Password</option>
-                  <option value="NOTE">Secure Note</option>
+                <input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="Asset Title" className="flex-1 p-3 rounded-lg bg-black/40 border border-white/5 focus:border-white/20 outline-none transition-all" />
+                <select value={category} onChange={e=>setCategory(e.target.value)} className="p-3 rounded-lg w-48 bg-black/40 border border-white/5 outline-none transition-all">
+                  {CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-black text-white">{c.label}</option>)}
                 </select>
               </div>
               
@@ -488,12 +536,41 @@ export function Dashboard() {
         />
       )}
 
+      <div className="flex flex-col sm:flex-row gap-4 mb-6 relative z-10 w-full glass-panel p-4 rounded-xl items-center">
+        <input 
+          type="text" 
+          placeholder="Search encrypted assets..." 
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="flex-1 p-3 bg-black/40 border border-white/10 rounded-lg focus:border-[var(--glow-color)] outline-none transition-all w-full"
+        />
+        <select 
+          value={filterCategory} 
+          onChange={(e) => setFilterCategory(e.target.value)}
+          className="p-3 bg-black/40 border border-white/10 rounded-lg outline-none transition-all w-full sm:w-48 appearance-none"
+        >
+          <option value="ALL" className="bg-black text-white">All Categories</option>
+          {CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-black text-white">{c.label}</option>)}
+        </select>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {loading && items.length === 0 ? (
            <div className="col-span-full py-12 text-center text-gray-400 animate-pulse font-mono tracking-widest">DECRYPTING ASSETS...</div>
-        ) : items.map((item, i) => (
+        ) : items.filter(item => {
+           const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.tags.toLowerCase().includes(searchQuery.toLowerCase());
+           const matchesCategory = filterCategory === 'ALL' || item.category === filterCategory;
+           return matchesSearch && matchesCategory;
+        }).map((item, i) => (
           <VaultItemCard key={item.id} item={item} index={i} onEdit={() => handleEdit(item)} onDelete={() => handleDelete(item.id)} />
         ))}
+        {!loading && items.length > 0 && items.filter(item => {
+           const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.tags.toLowerCase().includes(searchQuery.toLowerCase());
+           const matchesCategory = filterCategory === 'ALL' || item.category === filterCategory;
+           return matchesSearch && matchesCategory;
+        }).length === 0 && (
+           <div className="col-span-full py-12 text-center text-gray-500 font-mono">No matching assets found</div>
+        )}
       </div>
     </div>
   );
@@ -505,6 +582,10 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showQR, setShowQR] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [versions, setVersions] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [decryptedHistory, setDecryptedHistory] = useState<Record<string, string>>({});
 
   // Auto-hide when collapsing
   useEffect(() => {
@@ -513,6 +594,66 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
       setShowQR(false);
     }
   }, [expanded]);
+
+  const loadHistory = async () => {
+    setShowHistory(true);
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/vault/${item.id}/versions`);
+      const data = await res.json();
+      if (res.ok && data.versions) {
+        setVersions(data.versions);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleDecryptVersion = async (version: any) => {
+    if (decryptedHistory[version.id]) return;
+    try {
+      const key = useAuthStore.getState().encryptionKey;
+      if (!key) throw new Error("No key");
+      const decrypted = await decryptData(version.encryptedData, key);
+      setDecryptedHistory(prev => ({ ...prev, [version.id]: decrypted }));
+    } catch (e) {
+      setDecryptedHistory(prev => ({ ...prev, [version.id]: "Failed to decrypt" }));
+    }
+  };
+
+  const handleRevert = async (version: any) => {
+    try {
+      const decrypted = decryptedHistory[version.id];
+      if (!decrypted || decrypted === "Failed to decrypt") {
+         alert("Please decrypt the version first by clicking on it before reverting.");
+         return;
+      }
+      // Re-encrypt it or just send it to edit
+      // It's simpler to ask the user to copy past or we can trigger api update.
+      // Easiest: Call the PUT api directly to update data.
+      const key = useAuthStore.getState().encryptionKey;
+      if (!key) return;
+      const reEncrypted = await encryptData(decrypted, key);
+      const res = await fetch(`/api/vault/${item.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: item.title,
+          category: item.category,
+          tags: item.tags,
+          encryptedData: reEncrypted
+        })
+      });
+      if (res.ok) {
+        alert("Reverted successfully! Please refresh or the dashboard will reload automatically.");
+        window.location.reload();
+      }
+    } catch(e: any) {
+      alert("Failed to revert: " + e.message);
+    }
+  };
 
   const handleCopy = () => {
     if(item.decryptedData) {
@@ -550,6 +691,9 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
       case 'PASSWORD': return <Key size={16} className="text-yellow-400" />;
       case 'API_KEY': return <Code size={16} className="text-blue-400" />;
       case 'NOTE': return <FileText size={16} className="text-green-400" />;
+      case 'CREDIT_CARD': return <CreditCard size={16} className="text-orange-400" />;
+      case 'SOFTWARE_LICENSE': return <Shield size={16} className="text-purple-400" />;
+      case 'MEMBERSHIP': return <User size={16} className="text-pink-400" />;
       default: return <FileText size={16} className="text-gray-400" />;
     }
   };
@@ -627,6 +771,11 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
               {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
             </button>
           )}
+          {!item.decryptionFailed && (
+            <button onClick={loadHistory} className="p-1.5 hover:bg-white/20 rounded disabled:opacity-50" title="Version History">
+              <History size={14} />
+            </button>
+          )}
         </div>
         
         {!item.decryptionFailed && item.decryptedData && item.decryptedData.length > 16 && (
@@ -652,6 +801,48 @@ function VaultItemCard({ item, index, onEdit, onDelete }: { item: VaultItem, ind
           )}
         </AnimatePresence>
       </div>
+
+      {showHistory && (
+        <div className="fixed inset-0 min-h-screen bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowHistory(false)}>
+          <div className="glass-panel max-w-2xl w-full p-6 rounded-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold mb-4 font-mono flex items-center gap-2">
+              <History size={20} className="text-[var(--glow-color)]" /> Version History
+            </h3>
+            
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+              {loadingHistory ? (
+                 <div className="text-gray-400 font-mono animate-pulse">Loading history...</div>
+              ) : versions.length === 0 ? (
+                 <div className="text-gray-500 font-mono">No previous versions found.</div>
+              ) : (
+                versions.map((v, i) => (
+                  <div key={v.id} className="bg-black/40 border border-white/10 rounded-xl p-4 transition-all">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs text-gray-400 font-mono">Version from {new Date(v.createdAt).toLocaleString()}</span>
+                      {decryptedHistory[v.id] && decryptedHistory[v.id] !== "Failed to decrypt" && (
+                         <button onClick={() => handleRevert(v)} className="text-xs bg-orange-500/20 text-orange-400 hover:bg-orange-500 hover:text-black px-3 py-1 rounded transition-all font-bold">
+                           Revert to this
+                         </button>
+                      )}
+                    </div>
+                    {decryptedHistory[v.id] ? (
+                       <pre className="text-sm font-mono text-gray-300 break-all whitespace-pre-wrap mt-2">{decryptedHistory[v.id]}</pre>
+                    ) : (
+                       <button onClick={() => handleDecryptVersion(v)} className="text-sm text-[var(--glow-color)] hover:underline mt-2">
+                         Click to decrypt this version
+                       </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-white/10 flex justify-end">
+              <button onClick={() => setShowHistory(false)} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg font-bold transition-all">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
