@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
-import { encryptData, decryptData } from '../lib/crypto';
+import { encryptData, decryptData, deriveKey } from '../lib/crypto';
 import { Plus, Key, Eye, EyeOff, Save, Trash2, Camera, Upload, LogOut, Code, Palette, QrCode, Copy, Check, Edit2, Fingerprint, Image as ImageIcon, ChevronDown, ChevronUp, Download, FileText } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import { useThemeStore } from '../store/themeStore';
@@ -32,6 +32,38 @@ export function Dashboard() {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('API_KEY');
   const [secretData, setSecretData] = useState('');
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+
+  // Inactivity auto-lock
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      clearTimeout(timeout);
+      // Auto-lock after 5 minutes (300,000 ms)
+      timeout = setTimeout(() => {
+        if (useAuthStore.getState().encryptionKey) {
+          useAuthStore.getState().setEncryptionKey(null);
+        }
+      }, 300000);
+    };
+
+    window.addEventListener('mousemove', resetTimer);
+    window.addEventListener('keydown', resetTimer);
+    window.addEventListener('click', resetTimer);
+    window.addEventListener('scroll', resetTimer);
+
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeout);
+      window.removeEventListener('mousemove', resetTimer);
+      window.removeEventListener('keydown', resetTimer);
+      window.removeEventListener('click', resetTimer);
+      window.removeEventListener('scroll', resetTimer);
+    };
+  }, []);
 
   useEffect(() => {
     fetchItems();
@@ -223,6 +255,21 @@ export function Dashboard() {
     }
   };
 
+  const handleUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !unlockPassword) return;
+    setUnlocking(true);
+    try {
+      const key = await deriveKey(unlockPassword, user.email);
+      useAuthStore.getState().setEncryptionKey(key);
+      setUnlockPassword('');
+    } catch(e) {
+      alert("Failed to unlock.");
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
   if (!encryptionKey && user) {
     return (
       <div className="flex-1 flex items-center justify-center p-6 mt-[60px]">
@@ -230,11 +277,24 @@ export function Dashboard() {
           <Key size={48} className="mx-auto text-yellow-400 mb-4" />
           <h2 className="text-2xl font-bold mb-4 font-mono text-white">VAULT LOCKED</h2>
           <p className="text-sm text-gray-300 mb-6">
-            You authenticated without your Master Key (e.g. Magic Link on a new device). To decrypt your vault, you must provide your Master Key.
+            Your vault is locked due to inactivity or missing key. Please enter your Master Password to decrypt your vault.
           </p>
-          <button onClick={() => { logout(); window.location.href='/login'; }} className="w-full py-3 rounded-lg bg-[var(--glow-color)] hover:bg-white/20 transition-all font-bold">
-            Logout and Re-enter Key
-          </button>
+          <form onSubmit={handleUnlock} className="flex flex-col gap-4">
+            <input 
+              type="password" 
+              placeholder="Master Password" 
+              className="w-full p-4 bg-black/40 border border-white/10 rounded-xl focus:border-[var(--glow-color)] outline-none"
+              value={unlockPassword}
+              onChange={(e) => setUnlockPassword(e.target.value)}
+              required
+            />
+            <button type="submit" disabled={unlocking} className="w-full py-3 rounded-lg bg-[var(--glow-color)] hover:opacity-80 transition-opacity font-bold text-black disabled:opacity-50">
+              {unlocking ? 'Decrypting...' : 'Unlock Vault'}
+            </button>
+            <button type="button" onClick={() => { logout(); window.location.href='/login'; }} className="w-full py-3 rounded-lg bg-white/5 hover:bg-white/10 transition-all font-bold mt-2">
+              Logout
+            </button>
+          </form>
         </motion.div>
       </div>
     );

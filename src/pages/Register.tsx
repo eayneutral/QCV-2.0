@@ -39,6 +39,16 @@ export function Register() {
     }
   };
 
+  const getPasswordStrength = (pass: string) => {
+    let score = 0;
+    if (pass.length > 8) score++;
+    if (pass.length > 12) score++;
+    if (/[A-Z]/.test(pass)) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+    return score;
+  };
+
   if (recoveryCode) {
     return (
       <div className="flex-1 flex items-center justify-center p-6 mt-[60px]">
@@ -85,6 +95,22 @@ export function Register() {
           <div>
              <label className="block text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider">Master Key</label>
              <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 rounded-lg" placeholder="Must be strong. Irrecoverable." />
+             {password && (
+               <div className="mt-2">
+                 <div className="flex justify-between items-center mb-1">
+                   <span className="text-xs text-gray-400 font-mono">STRENGTH</span>
+                   <span className={`text-[10px] font-bold uppercase ${['text-red-500', 'text-red-500', 'text-orange-500', 'text-yellow-500', 'text-green-500', 'text-green-400'][Math.min(getPasswordStrength(password), 5)]}`}>
+                     {['Weak', 'Weak', 'Fair', 'Good', 'Strong', 'Excellent'][Math.min(getPasswordStrength(password), 5)]}
+                   </span>
+                 </div>
+                 <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                   <div 
+                     className={`h-full transition-all duration-300 ${['bg-red-500', 'bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500', 'bg-green-400'][Math.min(getPasswordStrength(password), 5)]}`} 
+                     style={{ width: `${Math.max(10, Math.min(100, getPasswordStrength(password) * 20))}%` }}
+                   ></div>
+                 </div>
+               </div>
+             )}
           </div>
 
           <div className="flex items-center gap-2 mt-2">
