@@ -35,6 +35,7 @@ export function Dashboard() {
   const [secretData, setSecretData] = useState('');
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlocking, setUnlocking] = useState(false);
+  const [showBiometricModal, setShowBiometricModal] = useState(false);
 
   // Inactivity auto-lock
   useEffect(() => {
@@ -178,6 +179,34 @@ export function Dashboard() {
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    if (file.type.startsWith('image/')) {
+      setLoading(true);
+      try {
+        const result = await Tesseract.recognize(file, 'eng');
+        setSecretData(prev => prev + (prev ? '\n' : '') + result.data.text.trim());
+        if (!title) setTitle('OCR Extracted');
+      } catch (err) {
+        console.error("OCR Failed", err);
+        alert("Failed to extract text from image.");
+      } finally {
+        setLoading(false);
+      }
+    } else if (file.name.endsWith('.env') || file.type === 'text/plain') {
+      const text = await file.text();
+      setSecretData(prev => prev + (prev ? '\n' : '') + text);
+      if (!title) setTitle('File Import');
+    }
+  };
+
   const handleRegisterBiometric = async () => {
     setRegisteringBiometric(true);
     try {
@@ -318,8 +347,8 @@ export function Dashboard() {
           <p className="text-sm text-gray-400">Agent: {user?.email}</p>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={handleRegisterBiometric} disabled={registeringBiometric} className="px-4 py-2 rounded-lg border border-white/20 hover:bg-white/10 text-xs hidden sm:block font-bold">
-            {registeringBiometric ? 'Registering...' : 'Register Biometric Device'}
+          <button onClick={() => setShowBiometricModal(true)} className="px-4 py-2 rounded-lg border border-white/20 hover:bg-white/10 text-xs hidden sm:block font-bold">
+            Register Biometric Device
           </button>
           <button onClick={() => setShowThemePanel(!showThemePanel)} className="p-2 hover:bg-white/10 rounded-full transition-all">
             <Palette size={20} />
@@ -329,6 +358,28 @@ export function Dashboard() {
           </button>
         </div>
       </header>
+
+      <AnimatePresence>
+        {showBiometricModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+             <div className="glass-panel p-8 rounded-2xl max-w-sm w-full flex flex-col items-center border-[var(--glow-color)]">
+               <Fingerprint size={48} className="text-[var(--glow-color)] mb-4 animate-pulse" />
+               <h3 className="text-xl font-bold font-mono mb-2">Passwordless Login</h3>
+               <p className="text-sm text-gray-400 text-center mb-6">
+                 Register your device's biometric sensor (Touch ID, Face ID, Windows Hello) or a hardware token to enable secure passwordless login.
+               </p>
+               <div className="w-full space-y-3">
+                 <button onClick={handleRegisterBiometric} disabled={registeringBiometric} className="w-full py-3 bg-white/10 text-white rounded-lg font-bold border border-[var(--glow-color)] hover:bg-white/20 transition-all flex justify-center items-center gap-2">
+                   {registeringBiometric ? <span className="animate-pulse">Waiting for sensor...</span> : "Start Registration"}
+                 </button>
+                 <button onClick={() => setShowBiometricModal(false)} className="w-full py-3 bg-white/5 hover:bg-white/10 rounded-lg font-bold transition-all text-sm">
+                   Cancel
+                 </button>
+               </div>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showThemePanel && (
@@ -397,18 +448,19 @@ export function Dashboard() {
               </div>
               
               <div className="relative">
-                <textarea required value={secretData} onChange={e=>setSecretData(e.target.value)} placeholder="Paste secret data here..." className="w-full p-4 rounded-lg min-h-[120px] font-mono text-sm" />
+                <textarea required value={secretData} onChange={e=>setSecretData(e.target.value)} onDragOver={handleDragOver} onDrop={handleDrop} placeholder="Paste secret data here or drag & drop an image/.env file to extract content..." className="w-full p-4 pt-12 rounded-lg min-h-[160px] font-mono text-sm border-2 border-white/5 focus:border-white/20 outline-none transition-all resize-y" />
+                <div className="absolute inset-0 pointer-events-none rounded-lg border-2 border-dashed border-transparent transition-all peer-dragover:border-[var(--glow-color)] peer-dragover:bg-white/5"></div>
                 
-                <div className="absolute top-2 right-2 flex gap-2">
-                  <button type="button" onClick={() => setShowQRScanner(true)} className="p-2 bg-white/10 hover:bg-white/20 rounded cursor-pointer transition-all" title="Scan QR Code via Camera">
-                    <QrCode size={16} />
+                <div className="absolute top-2 right-2 flex gap-2 z-10">
+                  <button type="button" onClick={() => setShowQRScanner(true)} className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Scan QR Code via Camera">
+                    <QrCode size={14} className="text-purple-400" /> <span className="hidden sm:inline">Scan QR</span>
                   </button>
-                  <label className="p-2 bg-white/10 hover:bg-white/20 rounded cursor-pointer transition-all" title="Extract text via OCR from Image">
-                    <ImageIcon size={16} />
+                  <label className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Extract text via OCR from Image">
+                    <ImageIcon size={14} className="text-orange-400" /> <span className="hidden sm:inline">Image OCR</span>
                     <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageOCR} />
                   </label>
-                  <label className="p-2 bg-white/10 hover:bg-white/20 rounded cursor-pointer transition-all" title="Upload .env or text file">
-                    <Upload size={16} />
+                  <label className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Upload .env or text file">
+                    <Upload size={14} className="text-blue-400" /> <span className="hidden sm:inline">Upload File</span>
                     <input type="file" ref={fileInputRef} className="hidden" accept=".env,text/plain" onChange={handleEnvUpload} />
                   </label>
                 </div>
