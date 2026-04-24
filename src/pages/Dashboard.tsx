@@ -32,7 +32,17 @@ export function Dashboard() {
   // New Item State
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('API_KEY');
+  const [tags, setTags] = useState('');
   const [secretData, setSecretData] = useState('');
+  
+  // Structured form states
+  const [formUsername, setFormUsername] = useState('');
+  const [formPassword, setFormPassword] = useState('');
+  const [formUrl, setFormUrl] = useState('');
+  const [formNotes, setFormNotes] = useState('');
+  const [formCustomFields, setFormCustomFields] = useState<{key:string, value:string}[]>([]);
+  const [formMode, setFormMode] = useState<'structured'|'raw'>('structured');
+
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [showBiometricModal, setShowBiometricModal] = useState(false);
@@ -157,18 +167,32 @@ export function Dashboard() {
 
   const handleAdd = async (e?: React.FormEvent) => {
     if(e) e.preventDefault();
-    if (!encryptionKey || !title || !secretData) return;
+
+    let finalData = secretData;
+    if (formMode === 'structured') {
+      const obj = {
+        _qcv_schema: '1.0',
+        username: formUsername,
+        password: formPassword,
+        url: formUrl,
+        notes: formNotes,
+        custom: formCustomFields
+      };
+      finalData = JSON.stringify(obj);
+    }
+
+    if (!encryptionKey || !title || (!finalData && formMode === 'raw')) return;
     
     setLoading(true);
     try {
-      const encrypted = await encryptData(secretData, encryptionKey);
+      const encrypted = await encryptData(finalData, encryptionKey);
       
       if (editingId) {
         await fetch(`/api/vault/${editingId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title, category, tags: '', encryptedData: encrypted
+            title, category, tags: tags, encryptedData: encrypted
           })
         });
       } else {
@@ -176,7 +200,7 @@ export function Dashboard() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title, category, tags: '', encryptedData: encrypted
+            title, category, tags: tags, encryptedData: encrypted
           })
         });
       }
@@ -185,6 +209,14 @@ export function Dashboard() {
       setEditingId(null);
       setTitle('');
       setSecretData('');
+      setFormUsername('');
+      setFormPassword('');
+      setFormUrl('');
+      setFormNotes('');
+      setFormCustomFields([]);
+      setFormMode('structured');
+      setTags('');
+
       fetchItems();
       setAppError(null);
     } catch(e: any) {
@@ -211,7 +243,27 @@ export function Dashboard() {
     setEditingId(item.id);
     setTitle(item.title);
     setCategory(item.category);
-    setSecretData(item.decryptedData || '');
+    setTags(item.tags || '');
+
+    try {
+      const parsed = JSON.parse(item.decryptedData || '');
+      if (parsed?._qcv_schema) {
+         setFormMode('structured');
+         setFormUsername(parsed.username || '');
+         setFormPassword(parsed.password || '');
+         setFormUrl(parsed.url || '');
+         setFormNotes(parsed.notes || '');
+         setFormCustomFields(parsed.custom || []);
+         setSecretData('');
+      } else {
+         setFormMode('raw');
+         setSecretData(item.decryptedData || '');
+      }
+    } catch {
+       setFormMode('raw');
+       setSecretData(item.decryptedData || '');
+    }
+
     setShowAdd(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -219,32 +271,55 @@ export function Dashboard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
+  const processFile = async (file: File) => {
+    setLoading(true);
+    try {
+      if (file.type.startsWith('image/')) {
+        const result = await Tesseract.recognize(file, 'eng');
+        const text = result.data.text.trim();
+        if (formMode === 'structured') setFormNotes(prev => prev + (prev ? '\n' : '') + text);
+        else setSecretData(prev => prev + (prev ? '\n' : '') + text);
+        if (!title) setTitle('OCR Extracted');
+      } else if (file.name.endsWith('.env') || file.type === 'text/plain' || file.name.endsWith('.md') || file.name.endsWith('.csv') || file.name.endsWith('.json') || file.name.endsWith('.yml') || file.name.endsWith('.yaml') || file.name.endsWith('.txt')) {
+        const text = await file.text();
+        if (formMode === 'structured') setFormNotes(prev => prev + (prev ? '\n' : '') + text);
+        else setSecretData(prev => prev + (prev ? '\n' : '') + text);
+        if(!title) setTitle('File Import');
+      } else {
+        // Send to backend extractor
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/vault/extract-file', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+           if (formMode === 'structured') setFormNotes(prev => prev + (prev ? '\n' : '') + data.text);
+           else setSecretData(prev => prev + (prev ? '\n' : '') + data.text);
+           if (!title) setTitle('File Extract: ' + file.name);
+        } else {
+           throw new Error(data.error);
+        }
+      }
+    } catch (err: any) {
+      console.error("File Processing Failed", err);
+      setAppError(`Processing Failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEnvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.name.endsWith('.env') || file.type === 'text/plain') {
-      const text = await file.text();
-      setSecretData(prev => prev + (prev ? '\n' : '') + text);
-      if(!title) setTitle('Env File Import');
-    }
+    if (file) await processFile(file);
+    if(fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleImageOCR = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
-
-    setLoading(true);
-    try {
-      const result = await Tesseract.recognize(file, 'eng');
-      setSecretData(prev => prev + (prev ? '\n' : '') + result.data.text.trim());
-      if(!title) setTitle('OCR Extracted');
-    } catch (err: any) {
-      console.error("OCR Failed", err);
-      setAppError(`OCR Failed: ${err.message || 'Unknown error'}`);
-    } finally {
-      setLoading(false);
-    }
+    if (file) await processFile(file);
+    if(imageInputRef.current) imageInputRef.current.value = '';
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -254,25 +329,7 @@ export function Dashboard() {
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-
-    if (file.type.startsWith('image/')) {
-      setLoading(true);
-      try {
-        const result = await Tesseract.recognize(file, 'eng');
-        setSecretData(prev => prev + (prev ? '\n' : '') + result.data.text.trim());
-        if (!title) setTitle('OCR Extracted');
-      } catch (err: any) {
-        console.error("OCR Failed", err);
-        setAppError(`OCR Failed: ${err.message || 'Unknown error'}`);
-      } finally {
-        setLoading(false);
-      }
-    } else if (file.name.endsWith('.env') || file.type === 'text/plain') {
-      const text = await file.text();
-      setSecretData(prev => prev + (prev ? '\n' : '') + text);
-      if (!title) setTitle('File Import');
-    }
+    if (file) await processFile(file);
   };
 
   const handleRegisterBiometric = async () => {
@@ -522,34 +579,104 @@ export function Dashboard() {
         {showAdd && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden mb-6">
             <form onSubmit={handleAdd} className="glass-panel p-6 rounded-2xl space-y-4 border-[var(--glow-color)]">
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between items-center mb-2 border-b border-white/10 pb-2">
                 <h3 className="font-bold text-lg">{editingId ? 'Edit Asset' : 'New Encrypted Asset'}</h3>
+                <div className="flex gap-2 bg-black/40 p-1 rounded-lg">
+                  <button type="button" onClick={() => setFormMode('structured')} className={`px-4 py-1.5 rounded text-sm font-bold transition-all ${formMode === 'structured' ? 'bg-[var(--glow-color)] text-black' : 'hover:bg-white/10'}`}>Structured</button>
+                  <button type="button" onClick={() => setFormMode('raw')} className={`px-4 py-1.5 rounded text-sm font-bold transition-all ${formMode === 'raw' ? 'bg-[var(--glow-color)] text-black' : 'hover:bg-white/10'}`}>Raw Text</button>
+                </div>
               </div>
+              
               <div className="flex gap-4">
-                <input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="Asset Title" className="flex-1 p-3 rounded-lg bg-black/40 border border-white/5 focus:border-white/20 outline-none transition-all" />
-                <select value={category} onChange={e=>setCategory(e.target.value)} className="p-3 rounded-lg w-48 bg-black/40 border border-white/5 outline-none transition-all">
+                <input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="Asset Title (e.g. Prod DB)" className="flex-1 p-3 rounded-lg bg-black/40 border border-white/5 focus:border-[var(--glow-color)] outline-none transition-all" />
+                <select value={category} onChange={e=>setCategory(e.target.value)} className="p-3 rounded-lg w-48 bg-black/40 border border-white/5 outline-none focus:border-[var(--glow-color)] transition-all">
                   {CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-black text-white">{c.label}</option>)}
                 </select>
               </div>
-              
-              <div className="relative">
-                <textarea required value={secretData} onChange={e=>setSecretData(e.target.value)} onDragOver={handleDragOver} onDrop={handleDrop} placeholder="Paste secret data here or drag & drop an image/.env file to extract content..." className="w-full p-4 pt-12 rounded-lg min-h-[160px] font-mono text-sm border-2 border-white/5 focus:border-white/20 outline-none transition-all resize-y" />
-                <div className="absolute inset-0 pointer-events-none rounded-lg border-2 border-dashed border-transparent transition-all peer-dragover:border-[var(--glow-color)] peer-dragover:bg-white/5"></div>
-                
-                <div className="absolute top-2 right-2 flex gap-2 z-10">
-                  <button type="button" onClick={() => setShowQRScanner(true)} className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Scan QR Code via Camera">
-                    <QrCode size={14} className="text-purple-400" /> <span className="hidden sm:inline">Scan QR</span>
-                  </button>
-                  <label className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Extract text via OCR from Image">
-                    <ImageIcon size={14} className="text-orange-400" /> <span className="hidden sm:inline">Image OCR</span>
-                    <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageOCR} />
-                  </label>
-                  <label className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Upload .env or text file">
-                    <Upload size={14} className="text-blue-400" /> <span className="hidden sm:inline">Upload File</span>
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".env,text/plain" onChange={handleEnvUpload} />
-                  </label>
+
+              {formMode === 'structured' ? (
+                <div className="space-y-4 pt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">USERNAME</label>
+                      <input value={formUsername} onChange={e=>setFormUsername(e.target.value)} className="w-full p-3 rounded-lg bg-black/40 border border-white/5 focus:border-[var(--glow-color)] outline-none transition-all" placeholder="admin, ops, etc." />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-400 mb-1">PASSWORD / TOKEN</label>
+                      <div className="relative">
+                        <input type="password" value={formPassword} onChange={e=>setFormPassword(e.target.value)} className="w-full p-3 rounded-lg bg-black/40 border border-white/5 focus:border-[var(--glow-color)] outline-none transition-all pr-10 font-mono text-sm" placeholder="••••••••" />
+                      </div>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-bold text-gray-400 mb-1">LOGIN URL / CONNECTION STRING</label>
+                      <input value={formUrl} onChange={e=>setFormUrl(e.target.value)} className="w-full p-3 rounded-lg bg-black/40 border border-white/5 focus:border-[var(--glow-color)] outline-none transition-all font-mono text-sm" placeholder="https://" />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-bold text-gray-400">ADDITIONAL CUSTOM FIELDS</label>
+                      <button type="button" onClick={() => setFormCustomFields([...formCustomFields, {key:'', value:''}])} className="text-xs text-[var(--glow-color)] hover:underline">+ Add Field</button>
+                    </div>
+                    {formCustomFields.map((field, idx) => (
+                      <div key={idx} className="flex gap-2 mb-2 items-center">
+                        <input value={field.key} onChange={e => {
+                          const nf = [...formCustomFields];
+                          nf[idx].key = e.target.value;
+                          setFormCustomFields(nf);
+                        }} placeholder="Key" className="w-1/3 p-2 rounded-lg bg-black/40 border border-white/5 focus:border-[var(--glow-color)] outline-none transition-all text-sm font-mono" />
+                        <input value={field.value} onChange={e => {
+                          const nf = [...formCustomFields];
+                          nf[idx].value = e.target.value;
+                          setFormCustomFields(nf);
+                        }} placeholder="Value" className="flex-1 p-2 rounded-lg bg-black/40 border border-white/5 focus:border-[var(--glow-color)] outline-none transition-all text-sm font-mono" />
+                        <button type="button" onClick={() => setFormCustomFields(formCustomFields.filter((_, i) => i !== idx))} className="p-2 text-red-500 hover:bg-red-500/20 rounded">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="relative">
+                    <label className="block text-xs font-bold text-gray-400 mb-1">SECURE NOTES / FILE EXTRACTS</label>
+                    <textarea value={formNotes} onChange={e=>setFormNotes(e.target.value)} onDragOver={handleDragOver} onDrop={handleDrop} placeholder="Paste secret data here or drag & drop an image/.env/pdf/docx to extract content..." className="w-full p-4 pt-12 rounded-lg min-h-[160px] font-mono text-sm border-2 border-white/5 focus:border-[var(--glow-color)] outline-none transition-all resize-y" />
+                    <div className="absolute inset-0 pointer-events-none rounded-lg border-2 border-dashed border-transparent transition-all peer-dragover:border-[var(--glow-color)] peer-dragover:bg-white/5"></div>
+                    
+                    <div className="absolute top-8 right-2 flex gap-2 z-10">
+                      <button type="button" onClick={() => setShowQRScanner(true)} className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Scan QR Code via Camera">
+                        <QrCode size={14} className="text-purple-400" /> <span className="hidden sm:inline">Scan QR</span>
+                      </button>
+                      <label className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Extract text via OCR from Image">
+                        <ImageIcon size={14} className="text-orange-400" /> <span className="hidden sm:inline">Image OCR</span>
+                        <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageOCR} />
+                      </label>
+                      <label className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Upload document (.pdf, .docx, .env, .txt)">
+                        <Upload size={14} className="text-blue-400" /> <span className="hidden sm:inline">Extract File</span>
+                        <input type="file" ref={fileInputRef} className="hidden" accept=".env,text/plain,.json,.md,.csv,.pdf,.docx,.xlsx" onChange={handleEnvUpload} />
+                      </label>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="relative">
+                  <textarea required value={secretData} onChange={e=>setSecretData(e.target.value)} onDragOver={handleDragOver} onDrop={handleDrop} placeholder="Paste raw secret data here or drag & drop files to extract..." className="w-full p-4 pt-12 rounded-lg min-h-[160px] font-mono text-sm border-2 border-white/5 focus:border-[var(--glow-color)] outline-none transition-all resize-y" />
+                  <div className="absolute inset-0 pointer-events-none rounded-lg border-2 border-dashed border-transparent transition-all peer-dragover:border-[var(--glow-color)] peer-dragover:bg-white/5"></div>
+                  
+                  <div className="absolute top-2 right-2 flex gap-2 z-10">
+                    <button type="button" onClick={() => setShowQRScanner(true)} className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Scan QR Code via Camera">
+                      <QrCode size={14} className="text-purple-400" /> <span className="hidden sm:inline">Scan QR</span>
+                    </button>
+                    <label className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Extract text via OCR from Image">
+                      <ImageIcon size={14} className="text-orange-400" /> <span className="hidden sm:inline">Image OCR</span>
+                      <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleImageOCR} />
+                    </label>
+                    <label className="flex items-center gap-2 px-3 py-1.5 bg-black/50 hover:bg-black/80 rounded-lg cursor-pointer transition-all border border-white/10 text-xs font-bold" title="Upload document (.pdf, .docx, .env, .txt)">
+                      <Upload size={14} className="text-blue-400" /> <span className="hidden sm:inline">Extract File</span>
+                      <input type="file" ref={fileInputRef} className="hidden" accept=".env,text/plain,.json,.md,.csv,.pdf,.docx,.xlsx" onChange={handleEnvUpload} />
+                    </label>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => { setShowAdd(false); setEditingId(null); setTitle(''); setSecretData(''); }} className="px-4 py-2 hover:bg-white/10 rounded-lg">Cancel</button>
@@ -744,12 +871,23 @@ function VaultItemCard({ item, index, onEdit, onDelete, isSelected, onSelect }: 
     }
   };
 
+  let structuredData: any = null;
+  try {
+     const parsed = JSON.parse(item.decryptedData || '');
+     if (parsed?._qcv_schema) structuredData = parsed;
+  } catch {}
+
   const getMaskedString = (len: number) => "•".repeat(Math.min(len, 24));
 
   const getSnippet = () => {
      if(item.decryptionFailed) return "••••••••••••••••••••••••";
      if(!item.decryptedData) return "";
      
+     if (structuredData) {
+       if (structuredData.username) return show ? structuredData.username : getMaskedString(8);
+       return show ? "Structured Data" : "••••••••";
+     }
+
      if (item.category === 'PASSWORD') {
        // Passwords are never shown unmasked in snippet view
        return getMaskedString(item.decryptedData.length);
@@ -765,7 +903,49 @@ function VaultItemCard({ item, index, onEdit, onDelete, isSelected, onSelect }: 
      return data.substring(0, 16) + (data.length > 16 ? "..." : "");
   };
 
-  const showRevealToggle = expanded || item.category !== 'PASSWORD';
+  const showRevealToggle = true; // Always allow revealing structured data UI
+
+  const renderStructuredData = () => {
+    if (!structuredData) return null;
+    return (
+      <div className="space-y-3 mt-2 text-sm">
+        {structuredData.username && (
+          <div className="flex flex-col">
+            <span className="text-[10px] text-gray-500 font-bold tracking-wider">USERNAME</span>
+            <span className="font-mono text-white break-all">{structuredData.username}</span>
+          </div>
+        )}
+        {structuredData.password && (
+          <div className="flex flex-col">
+            <span className="text-[10px] text-gray-500 font-bold tracking-wider">PASSWORD</span>
+            <span className="font-mono text-[var(--glow-color)] break-all">{show ? structuredData.password : "••••••••••••"}</span>
+          </div>
+        )}
+        {structuredData.url && (
+          <div className="flex flex-col">
+            <span className="text-[10px] text-gray-500 font-bold tracking-wider">URL</span>
+            <a href={structuredData.url.startsWith('http') ? structuredData.url : `https://${structuredData.url}`} target="_blank" className="font-mono text-blue-400 hover:underline break-all">{structuredData.url}</a>
+          </div>
+        )}
+        {structuredData.custom && structuredData.custom.length > 0 && (
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            {structuredData.custom.map((c: any, i: number) => (
+               <div key={i} className="flex gap-2">
+                 <span className="text-gray-400 font-bold border-r border-white/10 pr-2">{c.key}:</span>
+                 <span className="font-mono text-white break-all">{show ? c.value : "••••"}</span>
+               </div>
+            ))}
+          </div>
+        )}
+        {structuredData.notes && (
+          <div className="flex flex-col mt-3 border-t border-white/5 pt-2">
+            <span className="text-[10px] text-gray-500 font-bold tracking-wider mb-1">NOTES / RAW</span>
+            <span className="font-mono text-gray-300 break-all whitespace-pre-wrap text-xs">{show ? structuredData.notes : "••••••••"}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const getCategoryIcon = () => {
     switch (item.category) {
@@ -842,7 +1022,7 @@ function VaultItemCard({ item, index, onEdit, onDelete, isSelected, onSelect }: 
 
       <div className={`relative mt-auto z-10 bg-black/40 rounded-lg p-3 group/secret border ${item.decryptionFailed ? 'border-red-500/50' : 'border-white/5'} transition-all duration-300`}>
         <div className={`font-mono text-sm break-all pr-8 ${expanded ? 'h-auto max-h-[300px] overflow-y-auto' : 'h-10 overflow-hidden'} ${item.decryptionFailed && show ? 'text-red-400 font-bold' : ''}`}>
-          {expanded && show ? item.decryptedData : getSnippet()}
+          {expanded && show ? (structuredData ? renderStructuredData() : item.decryptedData) : getSnippet()}
         </div>
         
         <div className={`absolute right-2 flex flex-col gap-1 transition-all ${expanded ? 'top-2 opacity-100' : 'top-2 opacity-0 group-hover/secret:opacity-100'}`}>

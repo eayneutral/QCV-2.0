@@ -406,6 +406,42 @@ app.use(cookieParser());
     }
   });
 
+  const multer = require('multer');
+  const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
+
+  app.post("/api/vault/extract-file", requireAuth, upload.single('file'), async (req: any, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+      const fs = require('fs');
+      const filename = req.file.originalname.toLowerCase();
+      let text = '';
+
+      if (filename.endsWith('.pdf')) {
+        const pdf = require('pdf-parse');
+        const data = await pdf(req.file.buffer);
+        text = data.text;
+      } else if (filename.endsWith('.docx')) {
+        const mammoth = require('mammoth');
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        text = result.value;
+      } else if (filename.endsWith('.xlsx') || filename.endsWith('.xls') || filename.endsWith('.csv')) {
+        const xlsx = require('xlsx');
+        const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        text = xlsx.utils.sheet_to_txt(sheet);
+      } else {
+        // Fallback or text
+        text = req.file.buffer.toString('utf-8');
+      }
+
+      res.json({ text: text.trim() });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Extraction failed: " + e.message });
+    }
+  });
+
   app.delete("/api/vault/:id", requireAuth, async (req: any, res) => {
     try {
       await prisma.vault.deleteMany({ where: { id: req.params.id, userId: req.user.id } });
