@@ -82,7 +82,11 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/pricing" element={<Pricing />} />
-            <Route path="/creator" element={<CreatorPanel />} />
+            <Route path="/creator" element={
+              <ProtectedRoute>
+                <CreatorPanel />
+              </ProtectedRoute>
+            } />
             <Route path="/dashboard" element={
               <ProtectedRoute>
                 <Dashboard />

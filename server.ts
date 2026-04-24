@@ -91,7 +91,7 @@ app.use(cookieParser());
 
       const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
       res.cookie("qcv_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production" });
-      res.json({ success: true, user: { id: user.id, email: user.email } });
+      res.json({ success: true, user: { id: user.id, email: user.email, role: user.role } });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -108,7 +108,7 @@ app.use(cookieParser());
 
       const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
       res.cookie("qcv_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production" });
-      res.json({ success: true, user: { id: user.id, email: user.email } });
+      res.json({ success: true, user: { id: user.id, email: user.email, role: user.role } });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -164,7 +164,7 @@ app.use(cookieParser());
 
       const sessionToken = jwt.sign({ id: link.user.id, email: link.user.email }, JWT_SECRET, { expiresIn: '7d' });
       res.cookie("qcv_session", sessionToken, { httpOnly: true, secure: process.env.NODE_ENV === "production" });
-      res.json({ success: true, user: { id: link.user.id, email: link.user.email } });
+      res.json({ success: true, user: { id: link.user.id, email: link.user.email, role: link.user.role } });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -300,7 +300,7 @@ app.use(cookieParser());
         const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
         res.cookie("qcv_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production" });
         delete app.locals[`challenge_${email}`];
-        res.json({ verified: true, user: { id: user.id, email: user.email } });
+        res.json({ verified: true, user: { id: user.id, email: user.email, role: user.role } });
       } else {
         res.status(400).json({ error: "Verification failed" });
       }

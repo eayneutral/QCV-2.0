@@ -47,7 +47,11 @@ export function Login() {
 
       // We explicitly bypass the password here and attempt to derive from local storage JWK
       await login(data.user);
-      navigate('/dashboard');
+      if (data.user.role === 'admin') {
+        navigate('/creator');
+      } else {
+        navigate('/dashboard');
+      }
     } catch(err: any) {
       setError(err.message || "Invalid Magic Link");
     } finally {
@@ -97,7 +101,11 @@ export function Login() {
       if (!vRes.ok) throw new Error(vData.error);
       
       await login(vData.user);
-      navigate('/dashboard');
+      if (vData.user.role === 'admin') {
+        navigate('/creator');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (e: any) {
       setError(e.message || "Biometric login failed");
     } finally {
@@ -119,7 +127,11 @@ export function Login() {
       if (!res.ok) throw new Error(data.error);
       
       await login(data.user, password, rememberMe);
-      navigate('/dashboard');
+      if (data.user.role === 'admin') {
+        navigate('/creator');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err: any) {
       setError(err.message || "Failed to login");
     } finally {

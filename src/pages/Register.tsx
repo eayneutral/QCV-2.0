@@ -62,7 +62,7 @@ export function Register() {
           <div className="bg-black/50 p-4 border border-white/20 rounded font-mono text-[var(--glow-color)] text-lg mb-6 break-all">
             {recoveryCode}
           </div>
-          <button onClick={() => navigate('/dashboard')} className="w-full py-3 rounded-lg bg-[var(--glow-color)] hover:bg-white/20 transition-all font-bold">
+          <button onClick={() => navigate(useAuthStore.getState().user?.role === 'admin' ? '/creator' : '/dashboard')} className="w-full py-3 rounded-lg bg-[var(--glow-color)] hover:bg-white/20 transition-all font-bold">
             I Have Saved It Safely
           </button>
         </motion.div>
